@@ -141,11 +141,23 @@
                     <button class="add-btn" onclick="addHttpHeader()">+ 添加 Header</button>
                 </div>
                 <div>
-                    <label>请求 Body:</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label>请求 Body:</label>
+                        <select id="http-body-format" style="background: #3c3c3c; color: #d4d4d4; border: 1px solid #3c3c3c; padding: 5px 10px; border-radius: 4px;">
+                            <option value="text">Text</option>
+                            <option value="json" selected>JSON</option>
+                        </select>
+                    </div>
                     <textarea id="http-body" placeholder='{"key": "value"}'></textarea>
                 </div>
                 <div class="http-result">
-                    <label>响应:</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label>响应:</label>
+                        <select id="http-response-format" style="background: #3c3c3c; color: #d4d4d4; border: 1px solid #3c3c3c; padding: 5px 10px; border-radius: 4px;">
+                            <option value="text">Text</option>
+                            <option value="json" selected>JSON</option>
+                        </select>
+                    </div>
                     <div id="http-status"></div>
                     <pre id="http-response"></pre>
                 </div>
@@ -376,7 +388,20 @@
         async function sendHttpRequest() {
             const method = document.getElementById('http-method').value;
             const url = document.getElementById('http-url').value;
-            const body = document.getElementById('http-body').value;
+            let body = document.getElementById('http-body').value;
+            const bodyFormat = document.getElementById('http-body-format').value;
+            const responseFormat = document.getElementById('http-response-format').value;
+            
+            if (bodyFormat === 'json' && body) {
+                try {
+                    const obj = JSON.parse(body);
+                    body = JSON.stringify(obj, null, 2);
+                    document.getElementById('http-body').value = body;
+                } catch (e) {
+                    document.getElementById('http-status').innerHTML = '<span class="http-status error">Body JSON 格式错误: ' + e.message + '</span>';
+                    return;
+                }
+            }
             
             const headers = {};
             document.querySelectorAll('#http-headers-container .kv-row').forEach(row => {
@@ -386,6 +411,10 @@
                     headers[key] = value;
                 }
             });
+            
+            if (bodyFormat === 'json' && body && !headers['Content-Type']) {
+                headers['Content-Type'] = 'application/json';
+            }
             
             if (!url) {
                 document.getElementById('http-status').innerHTML = '<span class="http-status error">请输入 URL</span>';
@@ -418,7 +447,16 @@
                 } else {
                     const statusClass = result.status >= 200 && result.status < 300 ? 'success' : 'error';
                     document.getElementById('http-status').innerHTML = '<span class="http-status ' + statusClass + '">Status: ' + result.status + ' ' + result.statusText + '</span>';
-                    document.getElementById('http-response').textContent = result.body || '';
+                    
+                    let responseBody = result.body || '';
+                    if (responseFormat === 'json' && responseBody) {
+                        try {
+                            const obj = JSON.parse(responseBody);
+                            responseBody = JSON.stringify(obj, null, 2);
+                        } catch (e) {
+                        }
+                    }
+                    document.getElementById('http-response').textContent = responseBody;
                 }
             } catch (e) {
                 document.getElementById('http-status').innerHTML = '<span class="http-status error">请求失败: ' + e.message + '</span>';
