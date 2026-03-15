@@ -77,7 +77,9 @@ The server runs on `http://localhost:8080`
 
 ```
 dev_tools/
-├── main.go          # Main application (Go + embedded HTML/CSS/JS)
+├── main.go          # Main application (Go HTTP server)
+├── static/
+│   └── index.html   # Frontend (HTML/CSS/JS)
 ├── go.mod           # Go module file
 └── devtools         # Compiled binary
 ```
