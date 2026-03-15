@@ -143,12 +143,15 @@
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <label>请求 Body:</label>
-                        <select id="http-body-format" style="background: #3c3c3c; color: #d4d4d4; border: 1px solid #3c3c3c; padding: 5px 10px; border-radius: 4px;">
+                        <select id="http-body-format" onchange="updateBodyDisplay()" style="background: #3c3c3c; color: #d4d4d4; border: 1px solid #3c3c3c; padding: 5px 10px; border-radius: 4px;">
                             <option value="text">Text</option>
                             <option value="json" selected>JSON</option>
                         </select>
                     </div>
-                    <textarea id="http-body" placeholder='{"key": "value"}'></textarea>
+                    <div style="position: relative;">
+                        <textarea id="http-body" placeholder='{"key": "value"}' style="display: block;"></textarea>
+                        <div id="http-body-highlight" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: 10px; background: #282c34; border-radius: 4px; overflow: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px;"></div>
+                    </div>
                 </div>
                 <div class="http-result">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -159,7 +162,8 @@
                         </select>
                     </div>
                     <div id="http-status"></div>
-                    <pre id="http-response"></pre>
+                    <pre id="http-response-text" style="display: none;"></pre>
+                    <div id="http-response-highlight" style="display: none; padding: 15px; background: #282c34; border-radius: 4px; overflow: auto; max-height: 400px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px;"></div>
                 </div>
             </div>
         </div>
@@ -364,24 +368,25 @@
             document.getElementById('diff-result').innerHTML = '';
         }
 
-        function addHttpHeader() {
-            const container = document.getElementById('http-headers-container');
-            const row = document.createElement('div');
-            row.className = 'kv-row';
-            row.innerHTML = `
-                <input type="text" class="header-key" placeholder="Key (例如: Content-Type)">
-                <input type="text" class="header-value" placeholder="Value (例如: application/json)">
-                <button class="remove-btn" onclick="removeHttpHeader(this)">×</button>
-            `;
-            container.appendChild(row);
-        }
-
-        function removeHttpHeader(btn) {
-            const container = document.getElementById('http-headers-container');
-            if (container.children.length > 1) {
-                btn.parentElement.remove();
+        function updateBodyDisplay() {
+            const bodyFormat = document.getElementById('http-body-format').value;
+            const body = document.getElementById('http-body').value;
+            
+            if (bodyFormat === 'json' && body) {
+                try {
+                    const obj = JSON.parse(body);
+                    const formatted = JSON.stringify(obj, null, 2);
+                    document.getElementById('http-body').value = formatted;
+                    document.getElementById('http-body-highlight').innerHTML = highlightJSON(escapeHtml(formatted));
+                    document.getElementById('http-body-highlight').style.display = 'block';
+                    document.getElementById('http-body').style.display = 'none';
+                } catch (e) {
+                    document.getElementById('http-body-highlight').style.display = 'none';
+                    document.getElementById('http-body').style.display = 'block';
+                }
             } else {
-                btn.parentElement.querySelectorAll('input').forEach(input => input.value = '');
+                document.getElementById('http-body-highlight').style.display = 'none';
+                document.getElementById('http-body').style.display = 'block';
             }
         }
 
@@ -401,6 +406,16 @@
                     document.getElementById('http-status').innerHTML = '<span class="http-status error">Body JSON 格式错误: ' + e.message + '</span>';
                     return;
                 }
+            }
+            
+            if (bodyFormat === 'json' && body) {
+                const highlightDiv = document.getElementById('http-body-highlight');
+                highlightDiv.innerHTML = highlightJSON(escapeHtml(body));
+                highlightDiv.style.display = 'block';
+                document.getElementById('http-body').style.display = 'none';
+            } else {
+                document.getElementById('http-body-highlight').style.display = 'none';
+                document.getElementById('http-body').style.display = 'block';
             }
             
             const headers = {};
@@ -443,7 +458,9 @@
                 
                 if (result.error) {
                     document.getElementById('http-status').innerHTML = '<span class="http-status error">错误: ' + result.error + '</span>';
-                    document.getElementById('http-response').textContent = result.message || '';
+                    document.getElementById('http-response-text').textContent = result.message || '';
+                    document.getElementById('http-response-text').style.display = 'block';
+                    document.getElementById('http-response-highlight').style.display = 'none';
                 } else {
                     const statusClass = result.status >= 200 && result.status < 300 ? 'success' : 'error';
                     document.getElementById('http-status').innerHTML = '<span class="http-status ' + statusClass + '">Status: ' + result.status + ' ' + result.statusText + '</span>';
@@ -453,10 +470,19 @@
                         try {
                             const obj = JSON.parse(responseBody);
                             responseBody = JSON.stringify(obj, null, 2);
+                            document.getElementById('http-response-text').style.display = 'none';
+                            document.getElementById('http-response-highlight').innerHTML = highlightJSON(escapeHtml(responseBody));
+                            document.getElementById('http-response-highlight').style.display = 'block';
                         } catch (e) {
+                            document.getElementById('http-response-text').textContent = responseBody;
+                            document.getElementById('http-response-text').style.display = 'block';
+                            document.getElementById('http-response-highlight').style.display = 'none';
                         }
+                    } else {
+                        document.getElementById('http-response-text').textContent = responseBody;
+                        document.getElementById('http-response-text').style.display = 'block';
+                        document.getElementById('http-response-highlight').style.display = 'none';
                     }
-                    document.getElementById('http-response').textContent = responseBody;
                 }
             } catch (e) {
                 document.getElementById('http-status').innerHTML = '<span class="http-status error">请求失败: ' + e.message + '</span>';
