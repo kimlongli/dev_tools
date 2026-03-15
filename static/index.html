@@ -182,8 +182,8 @@
                         </select>
                     </div>
                     <div style="position: relative; min-height: 150px;">
-                        <textarea id="http-body" class="http-body-textarea" placeholder='{"key": "value"}' style="display: block; min-height: 150px;"></textarea>
-                        <div id="http-body-highlight" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: 10px; background: #282c34; border-radius: 4px; overflow: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; min-height: 150px;"></div>
+                        <textarea id="http-body" class="http-body-textarea" placeholder='{"key": "value"}'></textarea>
+                        <div id="http-body-highlight" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: 10px; background: #282c34; border-radius: 4px; overflow: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px;"></div>
                     </div>
                 </div>
                 <div class="http-result" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #3c3c3c;">
@@ -258,8 +258,9 @@
         }
 
         function addCopyButtons() {
-            document.querySelectorAll('textarea, input[type="text"]').forEach(el => {
-                if (el.id && !el.closest('.input-with-copy')) {
+            // 只给简单的 input 添加 wrapper，http-body 有特殊结构不处理
+            document.querySelectorAll('input[type="text"]').forEach(el => {
+                if (el.id && el.id !== 'http-url' && !el.closest('.input-with-copy')) {
                     const wrapper = document.createElement('div');
                     wrapper.className = 'input-with-copy';
                     el.parentNode.insertBefore(wrapper, el);
@@ -556,51 +557,66 @@
         function updateBodyDisplay() {
             const bodyFormat = document.getElementById('http-body-format').value;
             const body = document.getElementById('http-body').value;
+            const bodyTextarea = document.getElementById('http-body');
+            const bodyHighlight = document.getElementById('http-body-highlight');
             
-            if (bodyFormat === 'json' && body) {
+            if (bodyFormat === 'json' && body && body.trim()) {
                 try {
-                    const obj = JSON.parse(body);
+                    let normalizedBody = body
+                        .replace(/[\u2018\u2019]/g, "'")
+                        .replace(/[\u201C\u201D]/g, '"');
+                    const obj = JSON.parse(normalizedBody);
                     const formatted = JSON.stringify(obj, null, 2);
-                    document.getElementById('http-body').value = formatted;
-                    document.getElementById('http-body-highlight').innerHTML = highlightJSON(escapeHtml(formatted));
-                    document.getElementById('http-body-highlight').style.display = 'block';
-                    document.getElementById('http-body').style.display = 'none';
+                    bodyTextarea.value = formatted;
+                    bodyHighlight.innerHTML = highlightJSON(escapeHtml(formatted));
+                    bodyHighlight.style.display = 'block';
+                    bodyTextarea.style.display = 'none';
                 } catch (e) {
-                    document.getElementById('http-body-highlight').style.display = 'none';
-                    document.getElementById('http-body').style.display = 'block';
+                    bodyHighlight.style.display = 'none';
+                    bodyTextarea.style.display = 'block';
                 }
             } else {
-                document.getElementById('http-body-highlight').style.display = 'none';
-                document.getElementById('http-body').style.display = 'block';
+                bodyHighlight.style.display = 'none';
+                bodyTextarea.style.display = 'block';
             }
         }
 
+        let bodyFormatTimer;
+        document.getElementById('http-body')?.addEventListener('input', function() {
+            clearTimeout(bodyFormatTimer);
+            bodyFormatTimer = setTimeout(updateBodyDisplay, 500);
+        });
+
         async function sendHttpRequest() {
             const method = document.getElementById('http-method').value;
-            const url = document.getElementById('http-url').value;
-            let body = document.getElementById('http-body').value;
-            const bodyFormat = document.getElementById('http-body-format').value;
-            const responseFormat = document.getElementById('http-response-format').value;
+            let url = document.getElementById('http-url').value.trim();
             
-            if (bodyFormat === 'json' && body) {
+            // 获取 body
+            const bodyTextarea = document.getElementById('http-body');
+            const bodyHighlight = document.getElementById('http-body-highlight');
+            let body = bodyTextarea ? bodyTextarea.value : '';
+            const bodyFormat = document.getElementById('http-body-format').value;
+            
+            console.log('bodyTextarea:', !!bodyTextarea, 'bodyHighlight:', !!bodyHighlight, 'body:', body.substring(0, 30));
+            
+            // 格式化 body
+            if (bodyFormat === 'json' && body.trim()) {
                 try {
                     const obj = JSON.parse(body);
-                    body = JSON.stringify(obj, null, 2);
-                    document.getElementById('http-body').value = body;
+                    const formatted = JSON.stringify(obj, null, 2);
+                    if (bodyTextarea) bodyTextarea.value = formatted;
+                    if (bodyHighlight) {
+                        bodyHighlight.innerHTML = highlightJSON(formatted);
+                        bodyHighlight.style.display = 'block';
+                    }
+                    if (bodyTextarea) bodyTextarea.style.display = 'none';
+                    body = formatted;
                 } catch (e) {
-                    document.getElementById('http-status').innerHTML = '<span class="http-status error">Body JSON 格式错误: ' + e.message + '</span>';
-                    return;
+                    console.log('Body format error:', e.message);
                 }
-            }
-            
-            if (bodyFormat === 'json' && body) {
-                const highlightDiv = document.getElementById('http-body-highlight');
-                highlightDiv.innerHTML = highlightJSON(body);
-                highlightDiv.style.display = 'block';
-                document.getElementById('http-body').style.display = 'none';
             } else {
-                document.getElementById('http-body-highlight').style.display = 'none';
-                document.getElementById('http-body').style.display = 'block';
+                if (bodyHighlight) bodyHighlight.style.display = 'none';
+                if (bodyTextarea) bodyTextarea.style.display = 'block';
             }
             
             const headers = {};
@@ -651,19 +667,23 @@
                     document.getElementById('http-status').innerHTML = '<span class="http-status ' + statusClass + '">Status: ' + result.status + ' ' + result.statusText + '</span>';
                     
                     let responseBody = result.body || '';
-                    if (responseFormat === 'json' && responseBody) {
-                        try {
-                            const obj = JSON.parse(responseBody);
-                            responseBody = JSON.stringify(obj, null, 2);
-                            document.getElementById('http-response-text').style.display = 'none';
-                            document.getElementById('http-response-highlight').innerHTML = highlightJSON(responseBody);
-                            document.getElementById('http-response-highlight').style.display = 'block';
-                        } catch (e) {
-                            document.getElementById('http-response-text').textContent = responseBody;
-                            document.getElementById('http-response-text').style.display = 'block';
-                            document.getElementById('http-response-highlight').style.display = 'none';
-                        }
-                    } else {
+                    console.log('Response body:', responseBody.substring(0, 200));
+                    
+                    // 自动尝试 JSON 格式化 - 移除缩进再重新格式化
+                    try {
+                        // 先解析JSON字符串（移除缩进）
+                        let obj = JSON.parse(responseBody);
+                        // 重新格式化为带缩进的JSON
+                        let formatted = JSON.stringify(obj, null, 2);
+                        console.log('Formatted:', formatted.substring(0, 100));
+                        
+                        // 显示在高亮区域
+                        document.getElementById('http-response-text').style.display = 'none';
+                        document.getElementById('http-response-highlight').innerHTML = '<pre style="margin:0;padding:0;background:transparent;">' + highlightJSON(formatted) + '</pre>';
+                        document.getElementById('http-response-highlight').style.display = 'block';
+                        document.getElementById('http-response-format').value = 'json';
+                    } catch (e) {
+                        console.log('JSON parse error:', e.message);
                         document.getElementById('http-response-text').textContent = responseBody;
                         document.getElementById('http-response-text').style.display = 'block';
                         document.getElementById('http-response-highlight').style.display = 'none';
