@@ -77,9 +77,6 @@ func loadSnapshots() {
 }
 
 func saveSnapshots() {
-	mu.Lock()
-	defer mu.Unlock()
-
 	data, err := json.MarshalIndent(snapshots, "", "  ")
 	if err != nil {
 		return
