@@ -41,15 +41,19 @@
         .diff-remove { background: rgba(224, 108, 117, 0.2); color: #e06c75; }
         .diff-line { display: block; }
         .http-container { display: flex; flex-direction: column; gap: 15px; }
-        .http-row { display: flex; gap: 10px; }
-        .http-row input { flex: 1; }
-        .http-method { width: 100px; }
+        .http-row { display: flex; gap: 10px; align-items: center; }
+        .http-method { width: 100px; flex-shrink: 0; }
+        .http-row input[type="text"] { flex: 1 1 auto; min-width: 50px; }
+        .http-row button { flex-shrink: 0; }
+        .http-row .input-with-copy { flex: 1 1 auto; min-width: 50px; }
+        .http-row .input-with-copy input { width: 100%; }
         .http-headers { display: flex; flex-direction: column; }
         .http-header-row { display: flex; gap: 10px; margin-bottom: 5px; }
         .http-header-row input { flex: 1; margin-bottom: 0; }
         .http-header-row button { width: 30px; padding: 5px; }
+        .http-body-textarea { height: 150px !important; }
         .http-result { margin-top: 15px; }
-        .http-result pre { margin: 0; padding: 15px; background: #282c34; border-radius: 4px; overflow: auto; max-height: 400px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; }
+        .http-result pre { margin: 0; padding: 15px; background: #282c34; border-radius: 4px; overflow: auto; min-height: 200px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; }
         .http-status { padding: 5px 10px; border-radius: 4px; display: inline-block; margin-bottom: 10px; }
         .http-status.success { background: rgba(72, 199, 142, 0.2); color: #98c379; }
         .http-status.error { background: rgba(224, 108, 117, 0.2); color: #e06c75; }
@@ -62,19 +66,25 @@
         .kv-row .remove-btn:hover { background: #c45d69; }
         .add-btn { padding: 8px 16px; background: #0e639c; }
         .add-btn:hover { background: #1177bb; }
+        .input-with-copy { position: relative; }
+        .input-with-copy input, .input-with-copy textarea { padding-right: 40px; }
+        .copy-btn { position: absolute; right: 8px; top: 8px; background: transparent; border: none; cursor: pointer; padding: 4px 8px; font-size: 14px; }
+        .copy-btn:hover { color: #007acc; }
+        .label-with-copy { display: flex; justify-content: space-between; align-items: center; }
+        .label-with-copy .copy-btn { position: static; }
         .layout { display: flex; flex: 1; overflow: hidden; }
         .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         .tool-content { flex: 1; overflow-y: auto; padding-right: 10px; }
-        .snapshot-sidebar { width: 250px; background: #252526; border-left: 1px solid #3c3c3c; display: flex; flex-direction: column; overflow: hidden; }
-        .snapshot-header { padding: 15px; border-bottom: 1px solid #3c3c3c; display: flex; justify-content: space-between; align-items: center; }
-        .snapshot-title { font-size: 14px; font-weight: bold; }
-        .snapshot-list { flex: 1; overflow-y: auto; padding: 10px; }
-        .snapshot-item { padding: 10px; background: #2d2d2d; border-radius: 4px; margin-bottom: 8px; cursor: pointer; transition: background 0.2s; }
+        .snapshot-panel { background: #252526; border-bottom: 1px solid #3c3c3c; max-height: 200px; display: flex; flex-direction: column; }
+        .snapshot-header { padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #3c3c3c; }
+        .snapshot-title { font-size: 13px; font-weight: bold; }
+        .snapshot-list { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+        .snapshot-item { padding: 8px 12px; background: #2d2d2d; border-radius: 4px; cursor: pointer; transition: background 0.2s; display: flex; flex-direction: column; min-width: 120px; }
         .snapshot-item:hover { background: #37373d; }
-        .snapshot-item-name { font-size: 13px; margin-bottom: 5px; color: #d4d4d4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .snapshot-item-time { font-size: 11px; color: #808080; }
-        .snapshot-item-actions { display: flex; gap: 5px; margin-top: 8px; }
-        .snapshot-item-actions button { padding: 4px 8px; font-size: 11px; margin: 0; }
+        .snapshot-item-name { font-size: 12px; margin-bottom: 3px; color: #d4d4d4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+        .snapshot-item-time { font-size: 10px; color: #808080; }
+        .snapshot-item-actions { display: flex; gap: 5px; margin-top: 5px; }
+        .snapshot-item-actions button { padding: 2px 6px; font-size: 10px; margin: 0; }
         .snapshot-btn { padding: 6px 12px; font-size: 12px; background: #4a9e4a; }
         .snapshot-btn:hover { background: #5ab85a; }
         .snapshot-delete-btn { background: #e06c75; }
@@ -171,22 +181,22 @@
                             <option value="json" selected>JSON</option>
                         </select>
                     </div>
-                    <div style="position: relative;">
-                        <textarea id="http-body" placeholder='{"key": "value"}' style="display: block;"></textarea>
-                        <div id="http-body-highlight" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: 10px; background: #282c34; border-radius: 4px; overflow: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px;"></div>
+                    <div style="position: relative; min-height: 150px;">
+                        <textarea id="http-body" class="http-body-textarea" placeholder='{"key": "value"}' style="display: block; min-height: 150px;"></textarea>
+                        <div id="http-body-highlight" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: 10px; background: #282c34; border-radius: 4px; overflow: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; min-height: 150px;"></div>
                     </div>
                 </div>
-                <div class="http-result">
+                <div class="http-result" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #3c3c3c;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <label>响应:</label>
-                        <select id="http-response-format" style="background: #3c3c3c; color: #d4d4d4; border: 1px solid #3c3c3c; padding: 5px 10px; border-radius: 4px;">
+                        <select id="http-response-format" onchange="updateResponseDisplay()" style="background: #3c3c3c; color: #d4d4d4; border: 1px solid #3c3c3c; padding: 5px 10px; border-radius: 4px;">
                             <option value="text">Text</option>
                             <option value="json" selected>JSON</option>
                         </select>
                     </div>
                     <div id="http-status"></div>
-                    <pre id="http-response-text" style="display: none;"></pre>
-                    <div id="http-response-highlight" style="display: none; padding: 15px; background: #282c34; border-radius: 4px; overflow: auto; max-height: 400px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px;"></div>
+                    <pre id="http-response-text" style="display: none; min-height: 200px;"></pre>
+                    <div id="http-response-highlight" style="display: none; padding: 15px; background: #282c34; border-radius: 4px; overflow: auto; min-height: 200px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px;"></div>
                 </div>
             </div>
         </div>
@@ -216,14 +226,15 @@
                     <pre id="grpc-response"></pre>
                 </div>
             </div>
-        </div>
-        </div>
-        <div class="snapshot-sidebar">
-            <div class="snapshot-header">
-                <span class="snapshot-title">Snapshots</span>
             </div>
-            <div class="snapshot-list" id="snapshot-list"></div>
+            <div class="snapshot-panel">
+                <div class="snapshot-header">
+                    <span class="snapshot-title">Snapshots</span>
+                </div>
+                <div class="snapshot-list" id="snapshot-list"></div>
+            </div>
         </div>
+    </div>
     <script>
         console.log('Script loading...');
         
@@ -244,6 +255,59 @@
             } catch (e) {
                 console.error('Failed to load snapshots:', e);
             }
+        }
+
+        function addCopyButtons() {
+            document.querySelectorAll('textarea, input[type="text"]').forEach(el => {
+                if (el.id && !el.closest('.input-with-copy')) {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'input-with-copy';
+                    el.parentNode.insertBefore(wrapper, el);
+                    wrapper.appendChild(el);
+                    
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'copy-btn';
+                    btn.textContent = '📋';
+                    btn.title = '复制';
+                    btn.onclick = () => {
+                        const text = el.value || el.textContent || el.innerText;
+                        navigator.clipboard.writeText(text).then(() => {
+                            btn.textContent = '✓';
+                            setTimeout(() => btn.textContent = '📋', 1000);
+                        });
+                    };
+                    wrapper.appendChild(btn);
+                }
+            });
+            
+            const outputIds = ['json-output', 'ts-result', 'diff-result', 'grpc-response', 'http-response-highlight', 'http-response-text'];
+            outputIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && !el.querySelector('.copy-btn')) {
+                    const wrapper = document.createElement('div');
+                    wrapper.style.position = 'relative';
+                    el.parentNode.insertBefore(wrapper, el);
+                    wrapper.appendChild(el);
+                    
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'copy-btn';
+                    btn.style.position = 'absolute';
+                    btn.style.top = '5px';
+                    btn.style.right = '5px';
+                    btn.textContent = '📋';
+                    btn.title = '复制';
+                    btn.onclick = () => {
+                        const text = el.textContent || el.innerText;
+                        navigator.clipboard.writeText(text).then(() => {
+                            btn.textContent = '✓';
+                            setTimeout(() => btn.textContent = '📋', 1000);
+                        });
+                    };
+                    wrapper.appendChild(btn);
+                }
+            });
         }
 
         async function saveSnapshotToServer(tool, name, data) {
@@ -290,8 +354,10 @@
 
         loadSnapshotsFromServer().then(() => {
             console.log('Snapshots loaded');
+            addCopyButtons();
         }).catch(err => {
             console.error('Failed to load snapshots:', err);
+            addCopyButtons();
         });
 
         function highlightJSON(json) {
@@ -458,6 +524,35 @@
             document.getElementById('diff-result').innerHTML = '';
         }
 
+        function addHttpHeader() {
+            const container = document.getElementById('http-headers-container');
+            const row = document.createElement('div');
+            row.className = 'kv-row';
+            row.innerHTML = `
+                <input type="text" class="header-key" placeholder="Key (例如: Content-Type)">
+                <input type="text" class="header-value" placeholder="Value (例如: application/json)">
+                <button class="remove-btn" onclick="removeHttpHeader(this)">×</button>
+            `;
+            container.appendChild(row);
+        }
+
+        function removeHttpHeader(btn) {
+            const container = document.getElementById('http-headers-container');
+            if (container.children.length > 1) {
+                btn.parentElement.remove();
+            } else {
+                btn.parentElement.querySelectorAll('input').forEach(input => input.value = '');
+            }
+        }
+
+        function copyToClipboard(text, btn) {
+            navigator.clipboard.writeText(text).then(() => {
+                const original = btn.textContent;
+                btn.textContent = '✓';
+                setTimeout(() => btn.textContent = original, 1000);
+            });
+        }
+
         function updateBodyDisplay() {
             const bodyFormat = document.getElementById('http-body-format').value;
             const body = document.getElementById('http-body').value;
@@ -500,7 +595,7 @@
             
             if (bodyFormat === 'json' && body) {
                 const highlightDiv = document.getElementById('http-body-highlight');
-                highlightDiv.innerHTML = highlightJSON(escapeHtml(body));
+                highlightDiv.innerHTML = highlightJSON(body);
                 highlightDiv.style.display = 'block';
                 document.getElementById('http-body').style.display = 'none';
             } else {
@@ -561,7 +656,7 @@
                             const obj = JSON.parse(responseBody);
                             responseBody = JSON.stringify(obj, null, 2);
                             document.getElementById('http-response-text').style.display = 'none';
-                            document.getElementById('http-response-highlight').innerHTML = highlightJSON(escapeHtml(responseBody));
+                            document.getElementById('http-response-highlight').innerHTML = highlightJSON(responseBody);
                             document.getElementById('http-response-highlight').style.display = 'block';
                         } catch (e) {
                             document.getElementById('http-response-text').textContent = responseBody;
@@ -576,7 +671,30 @@
                 }
             } catch (e) {
                 document.getElementById('http-status').innerHTML = '<span class="http-status error">请求失败: ' + e.message + '</span>';
-                document.getElementById('http-response').textContent = '';
+                document.getElementById('http-response-text').textContent = '';
+            }
+        }
+
+        function updateResponseDisplay() {
+            const responseFormat = document.getElementById('http-response-format').value;
+            const responseText = document.getElementById('http-response-text').textContent;
+            const responseBody = responseText || document.getElementById('http-response-highlight').textContent;
+            
+            if (responseFormat === 'json' && responseBody) {
+                try {
+                    const obj = JSON.parse(responseBody);
+                    const formatted = JSON.stringify(obj, null, 2);
+                    document.getElementById('http-response-text').textContent = formatted;
+                    document.getElementById('http-response-text').style.display = 'none';
+                    document.getElementById('http-response-highlight').innerHTML = highlightJSON(formatted);
+                    document.getElementById('http-response-highlight').style.display = 'block';
+                } catch (e) {
+                    document.getElementById('http-response-text').style.display = 'block';
+                    document.getElementById('http-response-highlight').style.display = 'none';
+                }
+            } else {
+                document.getElementById('http-response-text').style.display = 'block';
+                document.getElementById('http-response-highlight').style.display = 'none';
             }
         }
 
