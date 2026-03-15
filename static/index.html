@@ -221,20 +221,37 @@
         <div class="snapshot-sidebar">
             <div class="snapshot-header">
                 <span class="snapshot-title">Snapshots</span>
-                <button onclick="exportSnapshots()">导出</button>
             </div>
             <div class="snapshot-list" id="snapshot-list"></div>
         </div>
-    </div>
-    <input type="file" id="snapshot-file-input" style="display: none;" accept=".json" onchange="importSnapshots(event)">
     <script>
-        const snapshots = {
-            json: [],
-            timestamp: [],
-            diff: [],
-            http: [],
-            grpc: []
-        };
+        function loadSnapshotsFromStorage() {
+            try {
+                const saved = localStorage.getItem('devtools-snapshots');
+                if (saved) {
+                    return JSON.parse(saved);
+                }
+            } catch (e) {
+                console.error('Failed to load snapshots:', e);
+            }
+            return {
+                json: [],
+                timestamp: [],
+                diff: [],
+                http: [],
+                grpc: []
+            };
+        }
+
+        function saveSnapshotsToStorage() {
+            try {
+                localStorage.setItem('devtools-snapshots', JSON.stringify(snapshots));
+            } catch (e) {
+                console.error('Failed to save snapshots:', e);
+            }
+        }
+
+        const snapshots = loadSnapshotsFromStorage();
         let currentTool = 'json';
 
         document.querySelectorAll('.tool-item').forEach(item => {
@@ -667,6 +684,7 @@
             };
             
             snapshots[tool].push(snapshot);
+            saveSnapshotsToStorage();
             renderSnapshots();
         }
 
@@ -679,6 +697,7 @@
 
         function deleteSnapshot(tool, id) {
             snapshots[tool] = snapshots[tool].filter(s => s.id !== id);
+            saveSnapshotsToStorage();
             renderSnapshots();
         }
 
@@ -704,40 +723,6 @@
             if (toolSnapshots.length === 0) {
                 list.innerHTML = '<div style="color: #808080; text-align: center; padding: 20px;">暂无 Snapshot</div>';
             }
-        }
-
-        function exportSnapshots() {
-            const data = JSON.stringify(snapshots, null, 2);
-            const blob = new Blob([data], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'devtools-snapshots.json';
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        function importSnapshots(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const imported = JSON.parse(e.target.result);
-                    Object.keys(imported).forEach(key => {
-                        if (snapshots[key]) {
-                            snapshots[key] = [...snapshots[key], ...imported[key]];
-                        }
-                    });
-                    renderSnapshots();
-                    alert('导入成功!');
-                } catch (err) {
-                    alert('导入失败: ' + err.message);
-                }
-            };
-            reader.readAsText(file);
-            event.target.value = '';
         }
 
         function escapeHtml(str) {
