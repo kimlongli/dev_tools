@@ -40,6 +40,22 @@
         .diff-add { background: rgba(72, 199, 142, 0.2); color: #98c379; }
         .diff-remove { background: rgba(224, 108, 117, 0.2); color: #e06c75; }
         .diff-line { display: block; }
+        .http-container { display: flex; flex-direction: column; gap: 15px; }
+        .http-row { display: flex; gap: 10px; }
+        .http-row input { flex: 1; }
+        .http-method { width: 100px; }
+        .http-headers { display: flex; flex-direction: column; }
+        .http-header-row { display: flex; gap: 10px; margin-bottom: 5px; }
+        .http-header-row input { flex: 1; margin-bottom: 0; }
+        .http-header-row button { width: 30px; padding: 5px; }
+        .http-result { margin-top: 15px; }
+        .http-result pre { margin: 0; padding: 15px; background: #282c34; border-radius: 4px; overflow: auto; max-height: 400px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; }
+        .http-status { padding: 5px 10px; border-radius: 4px; display: inline-block; margin-bottom: 10px; }
+        .http-status.success { background: rgba(72, 199, 142, 0.2); color: #98c379; }
+        .http-status.error { background: rgba(224, 108, 117, 0.2); color: #e06c75; }
+        .grpc-container { display: flex; flex-direction: column; gap: 15px; }
+        .grpc-result { margin-top: 15px; }
+        .grpc-result pre { margin: 0; padding: 15px; background: #282c34; border-radius: 4px; overflow: auto; max-height: 400px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -48,6 +64,8 @@
         <div class="tool-item active" data-tool="json">JSON 格式化</div>
         <div class="tool-item" data-tool="timestamp">时间戳转换</div>
         <div class="tool-item" data-tool="diff">文本比较器</div>
+        <div class="tool-item" data-tool="http">HTTP 请求</div>
+        <div class="tool-item" data-tool="grpc">gRPC 请求</div>
     </div>
     <div class="content">
         <div id="json" class="tool-panel active">
@@ -89,6 +107,61 @@
             <div class="diff-output">
                 <label>比较结果 (红色=删除, 绿色=新增):</label>
                 <div id="diff-result"></div>
+            </div>
+        </div>
+        <div id="http" class="tool-panel">
+            <div class="tool-title">HTTP 请求</div>
+            <div class="http-container">
+                <div class="http-row">
+                    <select id="http-method" class="http-method">
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="DELETE">DELETE</option>
+                        <option value="PATCH">PATCH</option>
+                    </select>
+                    <input type="text" id="http-url" placeholder="输入请求 URL (例如: https://api.example.com/users)">
+                    <button onclick="sendHttpRequest()">发送</button>
+                </div>
+                <div class="http-headers">
+                    <label>请求 Headers (JSON 格式):</label>
+                    <textarea id="http-headers" style="height: 80px;" placeholder='{"Content-Type": "application/json", "Authorization": "Bearer token"}'></textarea>
+                </div>
+                <div>
+                    <label>请求 Body:</label>
+                    <textarea id="http-body" placeholder='{"key": "value"}'></textarea>
+                </div>
+                <div class="http-result">
+                    <label>响应:</label>
+                    <div id="http-status"></div>
+                    <pre id="http-response"></pre>
+                </div>
+            </div>
+        </div>
+        <div id="grpc" class="tool-panel">
+            <div class="tool-title">gRPC 请求</div>
+            <div class="grpc-container">
+                <div>
+                    <label>服务地址:</label>
+                    <input type="text" id="grpc-address" placeholder="例如: localhost:50051">
+                </div>
+                <div>
+                    <label>Proto 文件 (可选，用于解析请求):</label>
+                    <textarea id="grpc-proto" style="height: 100px;" placeholder="syntax = &quot;proto3&quot;;&#10;package example;&#10;service MyService {&#10;  rpc GetUser (UserRequest) returns (UserResponse) {}&#10;}"></textarea>
+                </div>
+                <div>
+                    <label>服务/方法:</label>
+                    <input type="text" id="grpc-method" placeholder="例如: /example.MyService/GetUser">
+                </div>
+                <div>
+                    <label>请求消息 (JSON 格式):</label>
+                    <textarea id="grpc-request" placeholder='{"id": "123"}'></textarea>
+                </div>
+                <button onclick="sendGrpcRequest()">发送</button>
+                <div class="grpc-result">
+                    <label>响应:</label>
+                    <pre id="grpc-response"></pre>
+                </div>
             </div>
         </div>
     </div>
@@ -264,6 +337,83 @@
             document.getElementById('diff-original').value = '';
             document.getElementById('diff-new').value = '';
             document.getElementById('diff-result').innerHTML = '';
+        }
+
+        async function sendHttpRequest() {
+            const method = document.getElementById('http-method').value;
+            const url = document.getElementById('http-url').value;
+            const headersStr = document.getElementById('http-headers').value;
+            const body = document.getElementById('http-body').value;
+            
+            if (!url) {
+                document.getElementById('http-status').innerHTML = '<span class="http-status error">请输入 URL</span>';
+                return;
+            }
+            
+            document.getElementById('http-status').innerHTML = '<span class="http-status">发送中...</span>';
+            
+            try {
+                const headers = headersStr ? JSON.parse(headersStr) : {};
+                const options = {
+                    method: method,
+                    headers: headers
+                };
+                
+                if (body && ['POST', 'PUT', 'PATCH'].includes(method)) {
+                    options.body = body;
+                }
+                
+                const response = await fetch('/api/http', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, method, headers, body: options.body })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    document.getElementById('http-status').innerHTML = '<span class="http-status error">错误: ' + result.error + '</span>';
+                    document.getElementById('http-response').textContent = result.message || '';
+                } else {
+                    const statusClass = result.status >= 200 && result.status < 300 ? 'success' : 'error';
+                    document.getElementById('http-status').innerHTML = '<span class="http-status ' + statusClass + '">Status: ' + result.status + ' ' + result.statusText + '</span>';
+                    document.getElementById('http-response').textContent = result.body || '';
+                }
+            } catch (e) {
+                document.getElementById('http-status').innerHTML = '<span class="http-status error">请求失败: ' + e.message + '</span>';
+                document.getElementById('http-response').textContent = '';
+            }
+        }
+
+        async function sendGrpcRequest() {
+            const address = document.getElementById('grpc-address').value;
+            const method = document.getElementById('grpc-method').value;
+            const requestBody = document.getElementById('grpc-request').value;
+            
+            if (!address || !method) {
+                document.getElementById('grpc-response').textContent = '请填写服务地址和方法';
+                return;
+            }
+            
+            document.getElementById('grpc-response').textContent = '发送中...';
+            
+            try {
+                const response = await fetch('/api/grpc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address, method, body: requestBody })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    document.getElementById('grpc-response').textContent = '错误: ' + result.error + '\n' + (result.message || '');
+                } else {
+                    document.getElementById('grpc-response').textContent = result.response || result.message || '请求成功';
+                }
+            } catch (e) {
+                document.getElementById('grpc-response').textContent = '请求失败: ' + e.message;
+            }
         }
     </script>
 </body>
