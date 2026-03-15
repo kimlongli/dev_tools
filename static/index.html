@@ -56,6 +56,12 @@
         .grpc-container { display: flex; flex-direction: column; gap: 15px; }
         .grpc-result { margin-top: 15px; }
         .grpc-result pre { margin: 0; padding: 15px; background: #282c34; border-radius: 4px; overflow: auto; max-height: 400px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; }
+        .kv-row { display: flex; gap: 10px; margin-bottom: 8px; align-items: center; }
+        .kv-row input { flex: 1; margin-bottom: 0; }
+        .kv-row .remove-btn { width: 30px; padding: 8px 5px; background: #e06c75; }
+        .kv-row .remove-btn:hover { background: #c45d69; }
+        .add-btn { padding: 8px 16px; background: #0e639c; }
+        .add-btn:hover { background: #1177bb; }
     </style>
 </head>
 <body>
@@ -123,9 +129,16 @@
                     <input type="text" id="http-url" placeholder="输入请求 URL (例如: https://api.example.com/users)">
                     <button onclick="sendHttpRequest()">发送</button>
                 </div>
-                <div class="http-headers">
-                    <label>请求 Headers (JSON 格式):</label>
-                    <textarea id="http-headers" style="height: 80px;" placeholder='{"Content-Type": "application/json", "Authorization": "Bearer token"}'></textarea>
+                <div>
+                    <label>请求 Headers:</label>
+                    <div id="http-headers-container">
+                        <div class="kv-row">
+                            <input type="text" class="header-key" placeholder="Key (例如: Content-Type)">
+                            <input type="text" class="header-value" placeholder="Value (例如: application/json)">
+                            <button class="remove-btn" onclick="removeHttpHeader(this)">×</button>
+                        </div>
+                    </div>
+                    <button class="add-btn" onclick="addHttpHeader()">+ 添加 Header</button>
                 </div>
                 <div>
                     <label>请求 Body:</label>
@@ -339,11 +352,40 @@
             document.getElementById('diff-result').innerHTML = '';
         }
 
+        function addHttpHeader() {
+            const container = document.getElementById('http-headers-container');
+            const row = document.createElement('div');
+            row.className = 'kv-row';
+            row.innerHTML = `
+                <input type="text" class="header-key" placeholder="Key (例如: Content-Type)">
+                <input type="text" class="header-value" placeholder="Value (例如: application/json)">
+                <button class="remove-btn" onclick="removeHttpHeader(this)">×</button>
+            `;
+            container.appendChild(row);
+        }
+
+        function removeHttpHeader(btn) {
+            const container = document.getElementById('http-headers-container');
+            if (container.children.length > 1) {
+                btn.parentElement.remove();
+            } else {
+                btn.parentElement.querySelectorAll('input').forEach(input => input.value = '');
+            }
+        }
+
         async function sendHttpRequest() {
             const method = document.getElementById('http-method').value;
             const url = document.getElementById('http-url').value;
-            const headersStr = document.getElementById('http-headers').value;
             const body = document.getElementById('http-body').value;
+            
+            const headers = {};
+            document.querySelectorAll('#http-headers-container .kv-row').forEach(row => {
+                const key = row.querySelector('.header-key').value.trim();
+                const value = row.querySelector('.header-value').value.trim();
+                if (key) {
+                    headers[key] = value;
+                }
+            });
             
             if (!url) {
                 document.getElementById('http-status').innerHTML = '<span class="http-status error">请输入 URL</span>';
@@ -353,7 +395,6 @@
             document.getElementById('http-status').innerHTML = '<span class="http-status">发送中...</span>';
             
             try {
-                const headers = headersStr ? JSON.parse(headersStr) : {};
                 const options = {
                     method: method,
                     headers: headers
