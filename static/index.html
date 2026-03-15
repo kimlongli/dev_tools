@@ -225,34 +225,54 @@
             <div class="snapshot-list" id="snapshot-list"></div>
         </div>
     <script>
-        function loadSnapshotsFromStorage() {
+        let snapshots = {
+            json: [],
+            timestamp: [],
+            diff: [],
+            http: [],
+            grpc: []
+        };
+        let currentTool = 'json';
+
+        async function loadSnapshotsFromServer() {
             try {
-                const saved = localStorage.getItem('devtools-snapshots');
-                if (saved) {
-                    return JSON.parse(saved);
-                }
+                const response = await fetch('/api/snapshots');
+                snapshots = await response.json();
+                renderSnapshots();
             } catch (e) {
                 console.error('Failed to load snapshots:', e);
             }
-            return {
-                json: [],
-                timestamp: [],
-                diff: [],
-                http: [],
-                grpc: []
-            };
         }
 
-        function saveSnapshotsToStorage() {
+        async function saveSnapshotToServer(tool, name, data) {
             try {
-                localStorage.setItem('devtools-snapshots', JSON.stringify(snapshots));
+                const response = await fetch('/api/snapshots', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'save', tool: tool, name: name, data: data })
+                });
+                const result = await response.json();
+                await loadSnapshotsFromServer();
+                return result;
             } catch (e) {
-                console.error('Failed to save snapshots:', e);
+                console.error('Failed to save snapshot:', e);
+                alert('保存失败: ' + e.message);
             }
         }
 
-        const snapshots = loadSnapshotsFromStorage();
-        let currentTool = 'json';
+        async function deleteSnapshotFromServer(tool, id) {
+            try {
+                await fetch('/api/snapshots', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'delete', tool: tool, id: id })
+                });
+                await loadSnapshotsFromServer();
+            } catch (e) {
+                console.error('Failed to delete snapshot:', e);
+                alert('删除失败: ' + e.message);
+            }
+        }
 
         document.querySelectorAll('.tool-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -264,6 +284,8 @@
                 renderSnapshots();
             });
         });
+
+        loadSnapshotsFromServer();
 
         function highlightJSON(json) {
             json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -673,32 +695,22 @@
 
         function saveSnapshot(tool) {
             const fields = getToolFields(tool);
-            const name = prompt('请输入 Snapshot 名称:');
-            if (!name) return;
-            
-            const snapshot = {
-                id: Date.now(),
-                name: name,
-                time: new Date().toLocaleString('zh-CN'),
-                data: fields
-            };
-            
-            snapshots[tool].push(snapshot);
-            saveSnapshotsToStorage();
-            renderSnapshots();
+            const name = prompt('请输入 Snapshot 名称 (留空使用当前时间):');
+            saveSnapshotToServer(tool, name || '', fields);
         }
 
         function loadSnapshot(tool, id) {
-            const snapshot = snapshots[tool].find(s => s.id === id);
+            const snapshot = snapshots[tool]?.find(s => s.id === id);
             if (snapshot) {
                 loadToolFields(tool, snapshot.data);
             }
         }
 
         function deleteSnapshot(tool, id) {
-            snapshots[tool] = snapshots[tool].filter(s => s.id !== id);
-            saveSnapshotsToStorage();
-            renderSnapshots();
+            if (confirm('确定要删除这个 Snapshot 吗?')) {
+                deleteSnapshotFromServer(tool, id);
+            }
+        }
         }
 
         function renderSnapshots() {
