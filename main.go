@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -64,7 +65,10 @@ func handleHttpRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: tr}
 	httpReq, err := http.NewRequest(req.Method, req.URL, strings.NewReader(req.Body))
 	if err != nil {
 		json.NewEncoder(w).Encode(HttpResponse{Error: "创建请求失败", Message: err.Error()})
