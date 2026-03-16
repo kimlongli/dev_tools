@@ -214,7 +214,7 @@
         function renderSnapshots() {
             const list = document.getElementById('snapshot-list');
             list.innerHTML = '';
-            const toolSnapshots = snapshots[currentTool] || [];
+            const toolSnapshots = (snapshots[currentTool] || []).sort((a, b) => b.id - a.id);
             toolSnapshots.forEach(s => {
                 const item = document.createElement('div');
                 item.className = 'snapshot-item';
