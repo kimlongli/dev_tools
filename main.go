@@ -183,6 +183,7 @@ func handleSnapshots(w http.ResponseWriter, r *http.Request) {
 
 func handleDiyTools(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	loadDiyTools()
 	json.NewEncoder(w).Encode(diyTools)
 }
 
