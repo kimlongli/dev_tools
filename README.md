@@ -2,6 +2,8 @@
 
 一个轻量级的开发者工具箱，提供常用的开发辅助功能。
 
+![示例截图](resources/example.png)
+
 ## 功能特性
 
 ### 1. JSON 格式化
@@ -78,6 +80,7 @@ dev_tools/
 ├── static/
 │   └── index.html   # 前端页面
 ├── diy_tools/       # 自定义工具配置
+├── resources/       # 资源文件
 ├── snapshots.json   # 快照数据（自动生成）
 └── devtools        # 编译后的可执行文件
 ```
