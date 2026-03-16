@@ -65,6 +65,10 @@
         <div class="tool-item" data-tool="timestamp">时间戳转换</div>
         <div class="tool-item" data-tool="json-extract">JSON 提取</div>
         <div class="tool-item" data-tool="diff">文本比较器</div>
+        <div id="diy-tools-section" style="display: none;">
+            <div class="sidebar-title" style="padding: 15px; font-size: 14px; border-top: 1px solid #3c3c3c;">自定义工具</div>
+            <div id="diy-tools-list"></div>
+        </div>
     </div>
     <div class="layout">
         <div class="main-content">
@@ -128,6 +132,7 @@
                         <div id="diff-result"></div>
                     </div>
                 </div>
+                <div id="diy-panels"></div>
             </div>
             <div class="snapshot-panel">
                 <div class="snapshot-header">
@@ -172,6 +177,14 @@
                 data = { input: document.getElementById('json-extract-input').value, path: document.getElementById('json-extract-path').value };
             } else if (tool === 'diff') {
                 data = { original: document.getElementById('diff-original').value, new: document.getElementById('diff-new').value };
+            } else if (tool.startsWith('diy-')) {
+                const index = parseInt(tool.replace('diy-', ''));
+                const diyTool = diyTools[index];
+                const fields = {};
+                diyTool.fields.forEach((field, i) => {
+                    fields['field_' + i] = document.getElementById(tool + '-field-' + i).value;
+                });
+                data = { fields: fields };
             }
 
             try {
@@ -244,6 +257,14 @@
             } else if (tool === 'diff') {
                 document.getElementById('diff-original').value = s.data.original || '';
                 document.getElementById('diff-new').value = s.data.new || '';
+            } else if (tool.startsWith('diy-')) {
+                const index = parseInt(tool.replace('diy-', ''));
+                const diyTool = diyTools[index];
+                if (s.data.fields) {
+                    diyTool.fields.forEach((field, i) => {
+                        document.getElementById(tool + '-field-' + i).value = s.data.fields['field_' + i] || '';
+                    });
+                }
             }
         }
 
@@ -468,8 +489,125 @@
             return div.innerHTML;
         }
 
+        // DIY 工具
+        let diyTools = [];
+
+        async function loadDiyTools() {
+            try {
+                const response = await fetch('/api/diy-tools');
+                diyTools = await response.json();
+                
+                diyTools.forEach((_, index) => {
+                    const toolId = 'diy-' + index;
+                    if (!snapshots[toolId]) {
+                        snapshots[toolId] = [];
+                    }
+                });
+                
+                renderDiyTools();
+            } catch (e) {
+                console.error('加载自定义工具失败:', e);
+            }
+        }
+
+        function renderDiyTools() {
+            if (diyTools.length === 0) return;
+
+            document.getElementById('diy-tools-section').style.display = 'block';
+
+            const toolsList = document.getElementById('diy-tools-list');
+            const panelsContainer = document.getElementById('diy-panels');
+
+            diyTools.forEach((tool, index) => {
+                const toolId = 'diy-' + index;
+
+                const toolItem = document.createElement('div');
+                toolItem.className = 'tool-item';
+                toolItem.dataset.tool = toolId;
+                toolItem.textContent = tool.name;
+                toolsList.appendChild(toolItem);
+
+                const panel = document.createElement('div');
+                panel.id = toolId;
+                panel.className = 'tool-panel';
+
+                let fieldsHtml = '';
+                tool.fields.forEach((field, i) => {
+                    const fieldType = field.field_type || 'text';
+                    if (fieldType === 'row') {
+                        fieldsHtml += `
+                            <label>${escapeHtml(field.field_name)}:</label>
+                            <input type="text" id="${toolId}-field-${i}" placeholder="输入 ${escapeHtml(field.field_name)}...">
+                        `;
+                    } else {
+                        fieldsHtml += `
+                            <label>${escapeHtml(field.field_name)}:</label>
+                            <textarea id="${toolId}-field-${i}" placeholder="输入 ${escapeHtml(field.field_name)}..."></textarea>
+                        `;
+                    }
+                });
+
+                panel.innerHTML = `
+                    <div class="tool-title">${escapeHtml(tool.name)}</div>
+                    ${fieldsHtml}
+                    <button onclick="execDiyTool(${index})">执行</button>
+                    <button onclick="clearDiyTool(${index})">清空</button>
+                    <label>执行结果:</label>
+                    <div id="${toolId}-output" class="result"></div>
+                `;
+
+                panelsContainer.appendChild(panel);
+
+                toolItem.addEventListener('click', () => {
+                    document.querySelectorAll('.tool-item').forEach(i => i.classList.remove('active'));
+                    document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
+                    toolItem.classList.add('active');
+                    currentTool = toolId;
+                    document.getElementById(toolId).classList.add('active');
+                    renderSnapshots();
+                });
+            });
+        }
+
+        async function execDiyTool(index) {
+            const tool = diyTools[index];
+            const toolId = 'diy-' + index;
+
+            const args = [];
+            tool.fields.forEach((field, i) => {
+                const value = document.getElementById(`${toolId}-field-${i}`).value;
+                args.push(value);
+            });
+
+            try {
+                const response = await fetch('/api/exec', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cmd: tool.cmd, args: args })
+                });
+                const result = await response.json();
+                if (result.error) {
+                    document.getElementById(`${toolId}-output`).textContent = '错误: ' + result.error + '\n' + result.output;
+                } else {
+                    document.getElementById(`${toolId}-output`).textContent = result.output;
+                }
+            } catch (e) {
+                document.getElementById(`${toolId}-output`).textContent = '执行失败: ' + e.message;
+            }
+        }
+
+        function clearDiyTool(index) {
+            const tool = diyTools[index];
+            const toolId = 'diy-' + index;
+            tool.fields.forEach((field, i) => {
+                document.getElementById(`${toolId}-field-${i}`).value = '';
+            });
+            document.getElementById(`${toolId}-output`).textContent = '';
+        }
+
         // 初始化
         loadSnapshots();
+        loadDiyTools();
     </script>
 </body>
 </html>

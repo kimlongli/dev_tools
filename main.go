@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -18,9 +20,21 @@ type Snapshot struct {
 
 type Snapshots map[string][]Snapshot
 
+type DiyField struct {
+	FieldName string `json:"field_name"`
+	FieldType string `json:"field_type"`
+}
+
+type DiyTool struct {
+	Name   string     `json:"name"`
+	Fields []DiyField `json:"fields"`
+	Cmd    string     `json:"cmd"`
+}
+
 var (
 	snapshots     Snapshots
 	snapshotsFile = "./snapshots.json"
+	diyTools      []DiyTool
 	mu            sync.Mutex
 )
 
@@ -48,6 +62,33 @@ func saveSnapshots() {
 	os.WriteFile(snapshotsFile, data, 0644)
 }
 
+func loadDiyTools() {
+	diyTools = []DiyTool{}
+
+	entries, err := os.ReadDir("./diy_tools")
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+
+		data, err := os.ReadFile("./diy_tools/" + entry.Name())
+		if err != nil {
+			continue
+		}
+
+		var tool DiyTool
+		if err := json.Unmarshal(data, &tool); err != nil {
+			continue
+		}
+
+		diyTools = append(diyTools, tool)
+	}
+}
+
 type SnapshotRequest struct {
 	Action string                 `json:"action"`
 	Tool   string                 `json:"tool"`
@@ -56,13 +97,21 @@ type SnapshotRequest struct {
 	Data   map[string]interface{} `json:"data,omitempty"`
 }
 
+type ExecRequest struct {
+	Cmd  string   `json:"cmd"`
+	Args []string `json:"args"`
+}
+
 func main() {
 	loadSnapshots()
+	loadDiyTools()
+
+	http.HandleFunc("/api/snapshots", handleSnapshots)
+	http.HandleFunc("/api/diy-tools", handleDiyTools)
+	http.HandleFunc("/api/exec", handleExec)
 
 	fs := NewFileServer("./static")
 	http.Handle("/", fs)
-	
-	http.HandleFunc("/api/snapshots", handleSnapshots)
 
 	fmt.Println("开发者工具箱已启动!")
 	fmt.Println("请访问: http://localhost:29999")
@@ -130,4 +179,35 @@ func handleSnapshots(w http.ResponseWriter, r *http.Request) {
 	default:
 		json.NewEncoder(w).Encode(map[string]string{"error": "unknown action"})
 	}
+}
+
+func handleDiyTools(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(diyTools)
+}
+
+func handleExec(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req ExecRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	if req.Cmd == "" {
+		json.NewEncoder(w).Encode(map[string]string{"error": "cmd is empty"})
+		return
+	}
+
+	args := append([]string{}, req.Args...)
+	cmd := exec.Command(req.Cmd, args...)
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error(), "output": string(output)})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"output": string(output)})
 }

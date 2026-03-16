@@ -1,0 +1,14 @@
+{
+	"name": "Echo测试",
+	"fields": [
+		{
+			"field_name": "参数1",
+			"field_type": "text"
+		},
+		{
+			"field_name": "参数2",
+			"field_type": "row"
+		}
+	],
+	"cmd": "/bin/echo"
+}
