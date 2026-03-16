@@ -299,24 +299,69 @@
         function compareDiff() {
             const original = document.getElementById('diff-original').value;
             const newText = document.getElementById('diff-new').value;
-            const originalLines = original.split('\n');
-            const newLines = newText.split('\n');
             
+            const diff = computeDiff(original, newText);
             let result = '';
-            const maxLines = Math.max(originalLines.length, newLines.length);
             
-            for (let i = 0; i < maxLines; i++) {
-                const o = originalLines[i] || '';
-                const n = newLines[i] || '';
-                if (o !== n) {
-                    if (o) result += '<span class="diff-line diff-remove">- ' + escapeHtml(o) + '</span>';
-                    if (n) result += '<span class="diff-line diff-add">+ ' + escapeHtml(n) + '</span>';
+            for (const line of diff) {
+                if (line.type === 'added') {
+                    result += '<span class="diff-line diff-add">+ ' + escapeHtml(line.value) + '</span>';
+                } else if (line.type === 'removed') {
+                    result += '<span class="diff-line diff-remove">- ' + escapeHtml(line.value) + '</span>';
                 } else {
-                    result += '<span class="diff-line">  ' + escapeHtml(o) + '</span>';
+                    result += '<span class="diff-line">  ' + escapeHtml(line.value) + '</span>';
                 }
             }
             
             document.getElementById('diff-result').innerHTML = '<pre>' + result + '</pre>';
+        }
+
+        function computeDiff(text1, text2) {
+            const lines1 = text1.split('\n');
+            const lines2 = text2.split('\n');
+            const m = lines1.length;
+            const n = lines2.length;
+            
+            const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+            
+            for (let i = 1; i <= m; i++) {
+                dp[i][0] = i;
+            }
+            for (let j = 1; j <= n; j++) {
+                dp[0][j] = j;
+            }
+            
+            for (let i = 1; i <= m; i++) {
+                for (let j = 1; j <= n; j++) {
+                    if (lines1[i - 1] === lines2[j - 1]) {
+                        dp[i][j] = dp[i - 1][j - 1];
+                    } else {
+                        dp[i][j] = Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]) + 1;
+                    }
+                }
+            }
+            
+            const result = [];
+            let i = m, j = n;
+            
+            while (i > 0 || j > 0) {
+                if (i > 0 && j > 0 && lines1[i - 1] === lines2[j - 1]) {
+                    result.unshift({ type: 'unchanged', value: lines1[i - 1] });
+                    i--; j--;
+                } else if (j > 0 && (i === 0 || dp[i][j - 1] <= dp[i - 1][j] && dp[i][j - 1] <= dp[i - 1][j - 1])) {
+                    result.unshift({ type: 'added', value: lines2[j - 1] });
+                    j--;
+                } else if (i > 0 && (j === 0 || dp[i - 1][j] < dp[i][j - 1] || dp[i - 1][j] <= dp[i - 1][j - 1])) {
+                    result.unshift({ type: 'removed', value: lines1[i - 1] });
+                    i--;
+                } else {
+                    result.unshift({ type: 'removed', value: lines1[i - 1] });
+                    result.unshift({ type: 'added', value: lines2[j - 1] });
+                    i--; j--;
+                }
+            }
+            
+            return result;
         }
 
         function clearDiff() {
