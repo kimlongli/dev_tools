@@ -65,8 +65,8 @@ func main() {
 	http.HandleFunc("/api/snapshots", handleSnapshots)
 
 	fmt.Println("开发者工具箱已启动!")
-	fmt.Println("请访问: http://localhost:8080")
-	http.ListenAndServe(":8080", nil)
+	fmt.Println("请访问: http://localhost:29999")
+	http.ListenAndServe(":29999", nil)
 }
 
 // 简化版文件服务器
