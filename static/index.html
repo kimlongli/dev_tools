@@ -63,6 +63,7 @@
         <div class="sidebar-title">工具列表</div>
         <div class="tool-item active" data-tool="json">JSON 格式化</div>
         <div class="tool-item" data-tool="timestamp">时间戳转换</div>
+        <div class="tool-item" data-tool="json-extract">JSON 提取</div>
         <div class="tool-item" data-tool="diff">文本比较器</div>
     </div>
     <div class="layout">
@@ -94,6 +95,18 @@
                         <button onclick="getNow()">获取当前时间</button>
                     </div>
                     <div id="ts-result" class="result"></div>
+                </div>
+                <div id="json-extract" class="tool-panel">
+                    <div class="tool-title">JSON 提取</div>
+                    <button class="snapshot-btn" onclick="saveSnapshot('json-extract')">💾 保存 Snapshot</button>
+                    <label>JSON 内容:</label>
+                    <textarea id="json-extract-input" placeholder='[{"name": "lijinlong", "obj": {"key1": 123}}]'></textarea>
+                    <label>提取表达式 (如: [*].obj.key1):</label>
+                    <input type="text" id="json-extract-path" placeholder="[*].obj.key1">
+                    <button onclick="extractJSON()">提取</button>
+                    <button onclick="clearJsonExtract()">清空</button>
+                    <label>提取结果:</label>
+                    <div id="json-extract-output"></div>
                 </div>
                 <div id="diff" class="tool-panel">
                     <div class="tool-title">文本比较器</div>
@@ -130,6 +143,7 @@
         let snapshots = {
             json: [],
             timestamp: [],
+            'json-extract': [],
             diff: []
         };
 
@@ -154,6 +168,8 @@
                 data = { input: document.getElementById('json-input').value, output: document.getElementById('json-output').innerHTML };
             } else if (tool === 'timestamp') {
                 data = { ts: document.getElementById('ts-input').value, tsMs: document.getElementById('ts-ms-input').value, dt: document.getElementById('dt-input').value };
+            } else if (tool === 'json-extract') {
+                data = { input: document.getElementById('json-extract-input').value, path: document.getElementById('json-extract-path').value };
             } else if (tool === 'diff') {
                 data = { original: document.getElementById('diff-original').value, new: document.getElementById('diff-new').value };
             }
@@ -222,6 +238,9 @@
                 document.getElementById('ts-input').value = s.data.ts || '';
                 document.getElementById('ts-ms-input').value = s.data.tsMs || '';
                 document.getElementById('dt-input').value = s.data.dt || '';
+            } else if (tool === 'json-extract') {
+                document.getElementById('json-extract-input').value = s.data.input || '';
+                document.getElementById('json-extract-path').value = s.data.path || '';
             } else if (tool === 'diff') {
                 document.getElementById('diff-original').value = s.data.original || '';
                 document.getElementById('diff-new').value = s.data.new || '';
@@ -311,6 +330,61 @@
             document.getElementById('ts-ms-input').value = now.getTime();
             document.getElementById('dt-input').value = now.toLocaleString('zh-CN');
             document.getElementById('ts-result').textContent = '秒: ' + Math.floor(now.getTime() / 1000) + '\n毫秒: ' + now.getTime();
+        }
+
+        // JSON 提取
+        function extractJSON() {
+            const input = document.getElementById('json-extract-input').value.trim();
+            const path = document.getElementById('json-extract-path').value.trim();
+            if (!input || !path) return;
+            
+            try {
+                const json = JSON.parse(input);
+                const result = extractByPath(json, path);
+                const output = JSON.stringify(result, null, 2);
+                document.getElementById('json-extract-output').innerHTML = '<pre><code>' + highlightJSON(output) + '</code></pre>';
+            } catch (e) {
+                document.getElementById('json-extract-output').innerHTML = '<div class="result" style="color: #e06c75;">错误: ' + e.message + '</div>';
+            }
+        }
+
+        function extractByPath(json, path) {
+            const parts = path.split('.');
+            let current = [json];
+            
+            for (const part of parts) {
+                if (part === '') continue;
+                
+                const starMatch = part.match(/^\[(\*)\]$/);
+                const indexMatch = part.match(/^\[(\d+)\]$/);
+                
+                if (starMatch) {
+                    const newCurrent = [];
+                    for (const item of current) {
+                        if (Array.isArray(item)) {
+                            newCurrent.push(...item);
+                        } else if (item !== undefined && item !== null) {
+                            newCurrent.push(item);
+                        }
+                    }
+                    current = newCurrent;
+                } else if (indexMatch) {
+                    const index = parseInt(indexMatch[1]);
+                    current = current.map(item => item !== undefined && item !== null ? item[index] : undefined).filter(x => x !== undefined);
+                } else {
+                    current = current.map(item => item !== undefined && item !== null ? item[part] : undefined).filter(x => x !== undefined);
+                }
+                
+                if (current.length === 0) break;
+            }
+            
+            return current;
+        }
+
+        function clearJsonExtract() {
+            document.getElementById('json-extract-input').value = '';
+            document.getElementById('json-extract-path').value = '';
+            document.getElementById('json-extract-output').innerHTML = '';
         }
 
         // 文本比较
