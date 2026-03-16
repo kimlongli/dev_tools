@@ -108,6 +108,7 @@
                     <label>提取表达式 (如: [*].obj.key1):</label>
                     <input type="text" id="json-extract-path" placeholder="[*].obj.key1">
                     <button onclick="extractJSON()">提取</button>
+                    <button onclick="extractJSONAsLines()">提取成行</button>
                     <button onclick="clearJsonExtract()">清空</button>
                     <label>提取结果:</label>
                     <div id="json-extract-output"></div>
@@ -364,6 +365,26 @@
                 const result = extractByPath(json, path);
                 const output = JSON.stringify(result, null, 2);
                 document.getElementById('json-extract-output').innerHTML = '<pre><code>' + highlightJSON(output) + '</code></pre>';
+            } catch (e) {
+                document.getElementById('json-extract-output').innerHTML = '<div class="result" style="color: #e06c75;">错误: ' + e.message + '</div>';
+            }
+        }
+
+        function extractJSONAsLines() {
+            const input = document.getElementById('json-extract-input').value.trim();
+            const path = document.getElementById('json-extract-path').value.trim();
+            if (!input || !path) return;
+            
+            try {
+                const json = JSON.parse(input);
+                const result = extractByPath(json, path);
+                const lines = result.map(item => {
+                    if (typeof item === 'object') {
+                        return JSON.stringify(item);
+                    }
+                    return String(item);
+                }).join('\n');
+                document.getElementById('json-extract-output').innerHTML = '<pre><code>' + escapeHtml(lines) + '</code></pre>';
             } catch (e) {
                 document.getElementById('json-extract-output').innerHTML = '<div class="result" style="color: #e06c75;">错误: ' + e.message + '</div>';
             }
