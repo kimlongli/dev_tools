@@ -27,7 +27,7 @@
         button:hover { background: #1177bb; }
         .result { padding: 15px; background: #252526; border-radius: 4px; margin-top: 15px; white-space: pre-wrap; font-family: 'Consolas', 'Monaco', monospace; }
         .btn-group { margin-bottom: 15px; }
-        #json-output { margin-bottom: 15px; }
+        #json-output { margin-bottom: 15px; min-height: 50px; }
         #json-output pre { margin: 0; padding: 15px; background: #282c34; border-radius: 4px; overflow: auto; max-height: 400px; }
         #json-output code { font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; }
         .json-key { color: #e06c75; }
@@ -83,10 +83,13 @@
                     <button class="snapshot-btn" onclick="saveSnapshot('timestamp')">💾 保存 Snapshot</button>
                     <label>时间戳 (秒):</label>
                     <input type="text" id="ts-input" placeholder="输入时间戳...">
+                    <label>时间戳 (毫秒):</label>
+                    <input type="text" id="ts-ms-input" placeholder="输入毫秒时间戳...">
                     <label>时间 (格式: 2006-01-02 15:04:05):</label>
                     <input type="text" id="dt-input" placeholder="输入时间...">
                     <div class="btn-group">
                         <button onclick="tsToTime()">时间戳转时间</button>
+                        <button onclick="tsMsToTime()">毫秒时间戳转时间</button>
                         <button onclick="timeToTs()">时间转时间戳</button>
                         <button onclick="getNow()">获取当前时间</button>
                     </div>
@@ -131,13 +134,16 @@
         };
 
         // 工具切换
+        let currentTool = 'json';
+        
         document.querySelectorAll('.tool-item').forEach(item => {
             item.addEventListener('click', () => {
                 document.querySelectorAll('.tool-item').forEach(i => i.classList.remove('active'));
                 document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
                 item.classList.add('active');
-                const tool = item.dataset.tool;
-                document.getElementById(tool).classList.add('active');
+                currentTool = item.dataset.tool;
+                document.getElementById(currentTool).classList.add('active');
+                renderSnapshots();
             });
         });
 
@@ -147,7 +153,7 @@
             if (tool === 'json') {
                 data = { input: document.getElementById('json-input').value, output: document.getElementById('json-output').innerHTML };
             } else if (tool === 'timestamp') {
-                data = { ts: document.getElementById('ts-input').value, dt: document.getElementById('dt-input').value };
+                data = { ts: document.getElementById('ts-input').value, tsMs: document.getElementById('ts-ms-input').value, dt: document.getElementById('dt-input').value };
             } else if (tool === 'diff') {
                 data = { original: document.getElementById('diff-original').value, new: document.getElementById('diff-new').value };
             }
@@ -178,20 +184,19 @@
         function renderSnapshots() {
             const list = document.getElementById('snapshot-list');
             list.innerHTML = '';
-            Object.keys(snapshots).forEach(tool => {
-                snapshots[tool].forEach(s => {
-                    const item = document.createElement('div');
-                    item.className = 'snapshot-item';
-                    item.innerHTML = `
-                        <div class="snapshot-item-name">${s.name}</div>
-                        <div class="snapshot-item-time">${s.time}</div>
-                        <div class="snapshot-item-actions">
-                            <button onclick="loadSnapshot('${tool}', ${s.id})">加载</button>
-                            <button class="snapshot-delete-btn" onclick="deleteSnapshot('${tool}', ${s.id})">删除</button>
-                        </div>
-                    `;
-                    list.appendChild(item);
-                });
+            const toolSnapshots = snapshots[currentTool] || [];
+            toolSnapshots.forEach(s => {
+                const item = document.createElement('div');
+                item.className = 'snapshot-item';
+                item.innerHTML = `
+                    <div class="snapshot-item-name">${s.name}</div>
+                    <div class="snapshot-item-time">${s.time}</div>
+                    <div class="snapshot-item-actions">
+                        <button onclick="loadSnapshot('${currentTool}', ${s.id})">加载</button>
+                        <button class="snapshot-delete-btn" onclick="deleteSnapshot('${currentTool}', ${s.id})">删除</button>
+                    </div>
+                `;
+                list.appendChild(item);
             });
         }
 
@@ -215,6 +220,7 @@
                 document.getElementById('json-input').value = s.data.input || '';
             } else if (tool === 'timestamp') {
                 document.getElementById('ts-input').value = s.data.ts || '';
+                document.getElementById('ts-ms-input').value = s.data.tsMs || '';
                 document.getElementById('dt-input').value = s.data.dt || '';
             } else if (tool === 'diff') {
                 document.getElementById('diff-original').value = s.data.original || '';
@@ -276,6 +282,17 @@
             }
         }
 
+        function tsMsToTime() {
+            const ts = document.getElementById('ts-ms-input').value.trim();
+            if (!ts) return;
+            try {
+                const date = new Date(parseInt(ts));
+                document.getElementById('ts-result').textContent = date.toLocaleString('zh-CN');
+            } catch (e) {
+                document.getElementById('ts-result').textContent = '错误: ' + e.message;
+            }
+        }
+
         function timeToTs() {
             const dt = document.getElementById('dt-input').value.trim();
             if (!dt) return;
@@ -291,8 +308,9 @@
         function getNow() {
             const now = new Date();
             document.getElementById('ts-input').value = Math.floor(now.getTime() / 1000);
+            document.getElementById('ts-ms-input').value = now.getTime();
             document.getElementById('dt-input').value = now.toLocaleString('zh-CN');
-            document.getElementById('ts-result').textContent = '当前时间戳: ' + Math.floor(now.getTime() / 1000);
+            document.getElementById('ts-result').textContent = '秒: ' + Math.floor(now.getTime() / 1000) + '\n毫秒: ' + now.getTime();
         }
 
         // 文本比较
