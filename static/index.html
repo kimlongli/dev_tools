@@ -7,19 +7,22 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; display: flex; height: 100vh; background: #1e1e1e; color: #d4d4d4; }
-        .sidebar { width: 200px; background: #252526; border-right: 1px solid #3c3c3c; display: flex; flex-direction: column; }
+        .sidebar { width: 300px; background: #252526; border-right: 1px solid #3c3c3c; display: flex; flex-direction: column; }
         .sidebar-title { padding: 15px; font-size: 16px; font-weight: bold; border-bottom: 1px solid #3c3c3c; }
         .tool-item { padding: 12px 15px; cursor: pointer; border-bottom: 1px solid #2d2d2d; transition: background 0.2s; }
         .tool-item:hover { background: #2a2d2e; }
         .tool-item.active { background: #37373d; border-left: 3px solid #007acc; }
-        .content { flex: 1; padding: 20px; overflow-y: auto; }
+        .content { flex: 1; padding: 30px; overflow-y: auto; }
         .tool-panel { display: none; }
-        .tool-panel.active { display: block; }
-        .tool-title { font-size: 20px; margin-bottom: 20px; color: #fff; }
-        label { display: block; margin-bottom: 8px; font-size: 14px; color: #9cdcfe; }
-        input, textarea { width: 100%; padding: 10px; margin-bottom: 15px; background: #3c3c3c; border: 1px solid #3c3c3c; color: #d4d4d4; border-radius: 4px; font-size: 14px; }
+        .tool-panel.active { display: block; max-width: 1400px; }
+        .tool-title { font-size: 24px; margin-bottom: 25px; color: #fff; }
+        label { display: block; margin-bottom: 10px; font-size: 14px; color: #9cdcfe; }
+        input, textarea { width: 100%; padding: 12px 15px; margin-bottom: 20px; background: #3c3c3c; border: 1px solid #3c3c3c; color: #d4d4d4; border-radius: 4px; font-size: 14px; }
         input:focus, textarea:focus { outline: none; border-color: #007acc; }
-        textarea { height: 200px; font-family: 'Consolas', 'Monaco', monospace; resize: vertical; }
+        textarea { height: 250px; font-family: 'Consolas', 'Monaco', monospace; resize: vertical; }
+        textarea#json-input { height: 300px; }
+        textarea#diff-original, textarea#diff-new { height: 400px; }
+        input[type="text"] { height: 45px; }
         button { padding: 10px 20px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px; margin-bottom: 10px; }
         button:hover { background: #1177bb; }
         .result { padding: 15px; background: #252526; border-radius: 4px; margin-top: 15px; white-space: pre-wrap; font-family: 'Consolas', 'Monaco', monospace; }
@@ -32,11 +35,10 @@
         .json-number { color: #d19a66; }
         .json-boolean { color: #56b6c2; }
         .json-null { color: #c678dd; }
-        .diff-container { display: flex; gap: 20px; }
+        .diff-container { display: flex; gap: 30px; }
         .diff-panel { flex: 1; }
-        .diff-panel textarea { height: 300px; }
-        .diff-output { margin-top: 15px; }
-        .diff-output pre { margin: 0; padding: 15px; background: #282c34; border-radius: 4px; overflow: auto; max-height: 500px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+        .diff-output { margin-top: 20px; }
+        .diff-output pre { margin: 0; padding: 20px; background: #282c34; border-radius: 4px; overflow: auto; max-height: 600px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
         .diff-add { background: rgba(72, 199, 142, 0.2); color: #98c379; }
         .diff-remove { background: rgba(224, 108, 117, 0.2); color: #e06c75; }
         .diff-line { display: block; }
