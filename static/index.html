@@ -619,6 +619,7 @@
 
                 panel.innerHTML = `
                     <div class="tool-title">${escapeHtml(tool.name)}</div>
+                    <button class="snapshot-btn" onclick="saveSnapshot('${toolId}')">💾 保存 Snapshot</button>
                     ${fieldsHtml}
                     <button onclick="execDiyTool(${index})">执行</button>
                     <button onclick="clearDiyTool(${index})">清空</button>
