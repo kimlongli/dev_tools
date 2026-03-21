@@ -56,6 +56,13 @@
         .snapshot-btn:hover { background: #5ab85a; }
         .snapshot-delete-btn { background: #e06c75; }
         .snapshot-delete-btn:hover { background: #c45d69; }
+        .input-group { position: relative; }
+        .input-group textarea, .input-group input[type="text"] { padding-right: 40px; }
+        .copy-btn { position: absolute; right: 8px; top: 8px; background: transparent; border: none; color: #808080; cursor: pointer; padding: 4px; font-size: 16px; margin: 0; }
+        .copy-btn:hover { color: #d4d4d4; background: transparent; }
+        .output-group { position: relative; }
+        .output-group .result, .output-group pre { padding-right: 40px; }
+        .output-group .copy-btn { top: 10px; }
     </style>
 </head>
 <body>
@@ -77,41 +84,68 @@
                     <div class="tool-title">JSON 格式化</div>
                     <button class="snapshot-btn" onclick="saveSnapshot('json')">💾 保存 Snapshot</button>
                     <label>输入 JSON:</label>
-                    <textarea id="json-input" placeholder='{"key": "value"}'></textarea>
+                    <div class="input-group">
+                        <textarea id="json-input" placeholder='{"key": "value"}'></textarea>
+                        <button class="copy-btn" onclick="copyToClipboard('json-input')">📋</button>
+                    </div>
                     <button onclick="formatJSON()">格式化</button>
                     <button onclick="minifyJSON()">压缩</button>
                     <label>输出结果:</label>
-                    <div id="json-output"></div>
+                    <div class="output-group">
+                        <div id="json-output"></div>
+                        <button class="copy-btn" onclick="copyOutputToClipboard('json-output')">📋</button>
+                    </div>
                 </div>
                 <div id="timestamp" class="tool-panel">
                     <div class="tool-title">时间戳转换</div>
                     <button class="snapshot-btn" onclick="saveSnapshot('timestamp')">💾 保存 Snapshot</button>
                     <label>时间戳 (秒):</label>
-                    <input type="text" id="ts-input" placeholder="输入时间戳...">
+                    <div class="input-group">
+                        <input type="text" id="ts-input" placeholder="输入时间戳...">
+                        <button class="copy-btn" onclick="copyToClipboard('ts-input')">📋</button>
+                    </div>
                     <label>时间戳 (毫秒):</label>
-                    <input type="text" id="ts-ms-input" placeholder="输入毫秒时间戳...">
+                    <div class="input-group">
+                        <input type="text" id="ts-ms-input" placeholder="输入毫秒时间戳...">
+                        <button class="copy-btn" onclick="copyToClipboard('ts-ms-input')">📋</button>
+                    </div>
                     <label>时间 (格式: 2006-01-02 15:04:05):</label>
-                    <input type="text" id="dt-input" placeholder="输入时间...">
+                    <div class="input-group">
+                        <input type="text" id="dt-input" placeholder="输入时间...">
+                        <button class="copy-btn" onclick="copyToClipboard('dt-input')">📋</button>
+                    </div>
                     <div class="btn-group">
                         <button onclick="tsToTime()">时间戳转时间</button>
                         <button onclick="tsMsToTime()">毫秒时间戳转时间</button>
                         <button onclick="timeToTs()">时间转时间戳</button>
                         <button onclick="getNow()">获取当前时间</button>
                     </div>
-                    <div id="ts-result" class="result"></div>
+                    <div class="output-group">
+                        <div id="ts-result" class="result"></div>
+                        <button class="copy-btn" onclick="copyOutputToClipboard('ts-result')">📋</button>
+                    </div>
                 </div>
                 <div id="json-extract" class="tool-panel">
                     <div class="tool-title">JSON 提取</div>
                     <button class="snapshot-btn" onclick="saveSnapshot('json-extract')">💾 保存 Snapshot</button>
                     <label>JSON 内容:</label>
-                    <textarea id="json-extract-input" placeholder='[{"name": "lijinlong", "obj": {"key1": 123}}]'></textarea>
+                    <div class="input-group">
+                        <textarea id="json-extract-input" placeholder='[{"name": "lijinlong", "obj": {"key1": 123}}]'></textarea>
+                        <button class="copy-btn" onclick="copyToClipboard('json-extract-input')">📋</button>
+                    </div>
                     <label>提取表达式 (如: [*].obj.key1):</label>
-                    <input type="text" id="json-extract-path" placeholder="[*].obj.key1">
+                    <div class="input-group">
+                        <input type="text" id="json-extract-path" placeholder="[*].obj.key1">
+                        <button class="copy-btn" onclick="copyToClipboard('json-extract-path')">📋</button>
+                    </div>
                     <button onclick="extractJSON()">提取</button>
                     <button onclick="extractJSONAsLines()">提取成行</button>
                     <button onclick="clearJsonExtract()">清空</button>
                     <label>提取结果:</label>
-                    <div id="json-extract-output"></div>
+                    <div class="output-group">
+                        <div id="json-extract-output"></div>
+                        <button class="copy-btn" onclick="copyOutputToClipboard('json-extract-output')">📋</button>
+                    </div>
                 </div>
                 <div id="diff" class="tool-panel">
                     <div class="tool-title">文本比较器</div>
@@ -119,18 +153,27 @@
                     <div class="diff-container">
                         <div class="diff-panel">
                             <label>原始文本:</label>
-                            <textarea id="diff-original" placeholder="输入原始文本..."></textarea>
+                            <div class="input-group">
+                                <textarea id="diff-original" placeholder="输入原始文本..."></textarea>
+                                <button class="copy-btn" onclick="copyToClipboard('diff-original')">📋</button>
+                            </div>
                         </div>
                         <div class="diff-panel">
                             <label>新文本:</label>
-                            <textarea id="diff-new" placeholder="输入新文本..."></textarea>
+                            <div class="input-group">
+                                <textarea id="diff-new" placeholder="输入新文本..."></textarea>
+                                <button class="copy-btn" onclick="copyToClipboard('diff-new')">📋</button>
+                            </div>
                         </div>
                     </div>
                     <button onclick="compareDiff()">比较</button>
                     <button onclick="clearDiff()">清空</button>
                     <div class="diff-output">
                         <label>比较结果 (红色=删除, 绿色=新增):</label>
-                        <div id="diff-result"></div>
+                        <div class="output-group">
+                            <div id="diff-result"></div>
+                            <button class="copy-btn" onclick="copyOutputToClipboard('diff-result')">📋</button>
+                        </div>
                     </div>
                 </div>
                 <div id="diy-panels"></div>
@@ -558,12 +601,18 @@
                     if (fieldType === 'row') {
                         fieldsHtml += `
                             <label>${escapeHtml(field.field_name)}:</label>
-                            <input type="text" id="${toolId}-field-${i}" placeholder="输入 ${escapeHtml(field.field_name)}...">
+                            <div class="input-group">
+                                <input type="text" id="${toolId}-field-${i}" placeholder="输入 ${escapeHtml(field.field_name)}...">
+                                <button class="copy-btn" onclick="copyToClipboard('${toolId}-field-${i}')">📋</button>
+                            </div>
                         `;
                     } else {
                         fieldsHtml += `
                             <label>${escapeHtml(field.field_name)}:</label>
-                            <textarea id="${toolId}-field-${i}" placeholder="输入 ${escapeHtml(field.field_name)}..."></textarea>
+                            <div class="input-group">
+                                <textarea id="${toolId}-field-${i}" placeholder="输入 ${escapeHtml(field.field_name)}..."></textarea>
+                                <button class="copy-btn" onclick="copyToClipboard('${toolId}-field-${i}')">📋</button>
+                            </div>
                         `;
                     }
                 });
@@ -574,7 +623,10 @@
                     <button onclick="execDiyTool(${index})">执行</button>
                     <button onclick="clearDiyTool(${index})">清空</button>
                     <label>执行结果:</label>
-                    <div id="${toolId}-output" class="result"></div>
+                    <div class="output-group">
+                        <div id="${toolId}-output" class="result"></div>
+                        <button class="copy-btn" onclick="copyOutputToClipboard('${toolId}-output')">📋</button>
+                    </div>
                 `;
 
                 panelsContainer.appendChild(panel);
@@ -624,6 +676,32 @@
                 document.getElementById(`${toolId}-field-${i}`).value = '';
             });
             document.getElementById(`${toolId}-output`).textContent = '';
+        }
+
+        function copyToClipboard(elementId) {
+            const el = document.getElementById(elementId);
+            const text = el.value || el.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = el.parentElement.querySelector('.copy-btn');
+                if (btn) {
+                    const originalText = btn.textContent;
+                    btn.textContent = '✓';
+                    setTimeout(() => btn.textContent = originalText, 1000);
+                }
+            });
+        }
+
+        function copyOutputToClipboard(elementId) {
+            const el = document.getElementById(elementId);
+            const text = el.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = el.parentElement.querySelector('.copy-btn');
+                if (btn) {
+                    const originalText = btn.textContent;
+                    btn.textContent = '✓';
+                    setTimeout(() => btn.textContent = originalText, 1000);
+                }
+            });
         }
 
         // 初始化
