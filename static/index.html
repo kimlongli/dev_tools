@@ -72,6 +72,7 @@
         <div class="tool-item" data-tool="timestamp">时间戳转换</div>
         <div class="tool-item" data-tool="json-extract">JSON 提取</div>
         <div class="tool-item" data-tool="diff">文本比较器</div>
+        <div class="tool-item" data-tool="url-encode">URL 编解码</div>
         <div id="diy-tools-section" style="display: none;">
             <div class="sidebar-title" style="padding: 15px; font-size: 14px; border-top: 1px solid #3c3c3c;">自定义工具</div>
             <div id="diy-tools-list"></div>
@@ -176,6 +177,23 @@
                         </div>
                     </div>
                 </div>
+                <div id="url-encode" class="tool-panel">
+                    <div class="tool-title">URL 编解码</div>
+                    <button class="snapshot-btn" onclick="saveSnapshot('url-encode')">💾 保存 Snapshot</button>
+                    <label>输入内容:</label>
+                    <div class="input-group">
+                        <textarea id="url-encode-input" placeholder="输入需要编码或解码的内容..."></textarea>
+                        <button class="copy-btn" onclick="copyToClipboard('url-encode-input')">📋</button>
+                    </div>
+                    <button onclick="urlEncode()">URL 编码</button>
+                    <button onclick="urlDecode()">URL 解码</button>
+                    <button onclick="clearUrlEncode()">清空</button>
+                    <label>输出结果:</label>
+                    <div class="output-group">
+                        <div id="url-encode-output"></div>
+                        <button class="copy-btn" onclick="copyOutputToClipboard('url-encode-output')">📋</button>
+                    </div>
+                </div>
                 <div id="diy-panels"></div>
             </div>
             <div class="snapshot-panel">
@@ -193,7 +211,8 @@
             json: [],
             timestamp: [],
             'json-extract': [],
-            diff: []
+            diff: [],
+            'url-encode': []
         };
 
         // 工具切换
@@ -235,6 +254,8 @@
                 data = { input: document.getElementById('json-extract-input').value, path: document.getElementById('json-extract-path').value };
             } else if (tool === 'diff') {
                 data = { original: document.getElementById('diff-original').value, new: document.getElementById('diff-new').value };
+            } else if (tool === 'url-encode') {
+                data = { input: document.getElementById('url-encode-input').value, output: document.getElementById('url-encode-output').innerHTML };
             } else if (tool.startsWith('diy-')) {
                 const index = parseInt(tool.replace('diy-', ''));
                 const diyTool = diyTools[index];
@@ -315,6 +336,8 @@
             } else if (tool === 'diff') {
                 document.getElementById('diff-original').value = s.data.original || '';
                 document.getElementById('diff-new').value = s.data.new || '';
+            } else if (tool === 'url-encode') {
+                document.getElementById('url-encode-input').value = s.data.input || '';
             } else if (tool.startsWith('diy-')) {
                 const index = parseInt(tool.replace('diy-', ''));
                 const diyTool = diyTools[index];
@@ -559,6 +582,28 @@
             document.getElementById('diff-original').value = '';
             document.getElementById('diff-new').value = '';
             document.getElementById('diff-result').innerHTML = '';
+        }
+
+        // URL 编解码
+        function urlEncode() {
+            const input = document.getElementById('url-encode-input').value;
+            const encoded = encodeURIComponent(input);
+            document.getElementById('url-encode-output').textContent = encoded;
+        }
+
+        function urlDecode() {
+            const input = document.getElementById('url-encode-input').value;
+            try {
+                const decoded = decodeURIComponent(input);
+                document.getElementById('url-encode-output').textContent = decoded;
+            } catch (e) {
+                document.getElementById('url-encode-output').textContent = '解码失败: ' + e.message;
+            }
+        }
+
+        function clearUrlEncode() {
+            document.getElementById('url-encode-input').value = '';
+            document.getElementById('url-encode-output').textContent = '';
         }
 
         function escapeHtml(text) {
