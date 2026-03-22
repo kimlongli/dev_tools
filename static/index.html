@@ -63,6 +63,13 @@
         .output-group { position: relative; }
         .output-group .result, .output-group pre { padding-right: 40px; }
         .output-group .copy-btn { top: 10px; }
+        .csv-table-container { overflow: auto; max-height: 500px; margin-top: 15px; border: 1px solid #3c3c3c; }
+        .csv-table { border-collapse: collapse; width: 100%; font-size: 14px; }
+        .csv-table th, .csv-table td { border: 1px solid #3c3c3c; padding: 8px 12px; text-align: left; }
+        .csv-table th { background: #2d2d2d; color: #9cdcfe; }
+        .csv-table td { background: #252526; }
+        .csv-table td:focus { outline: 2px solid #007acc; outline-offset: -2px; }
+        .csv-table tr:hover td { background: #2a2d2e; }
     </style>
 </head>
 <body>
@@ -74,6 +81,8 @@
         <div class="tool-item" data-tool="diff">文本比较器</div>
         <div class="tool-item" data-tool="url-encode">URL 编解码</div>
         <div class="tool-item" data-tool="unescape">字符串转义</div>
+        <div class="tool-item" data-tool="csv">CSV 表格</div>
+        <div class="tool-item" data-tool="base64">Base64 编解码</div>
         <div id="diy-tools-section" style="display: none;">
             <div class="sidebar-title" style="padding: 15px; font-size: 14px; border-top: 1px solid #3c3c3c;">自定义工具</div>
             <div id="diy-tools-list"></div>
@@ -212,6 +221,32 @@
                         <button class="copy-btn" onclick="copyOutputToClipboard('unescape-output')">📋</button>
                     </div>
                 </div>
+                <div id="csv" class="tool-panel">
+                    <div class="tool-title">CSV 表格</div>
+                    <button onclick="openCSVFile()">打开 CSV</button>
+                    <input type="file" id="csv-file-input" accept=".csv" onchange="loadCSVFile()" style="display:none;">
+                    <button onclick="saveCSV()">保存 CSV</button>
+                    <div class="csv-table-container">
+                        <table id="csv-table" class="csv-table"></table>
+                    </div>
+                </div>
+                <div id="base64" class="tool-panel">
+                    <div class="tool-title">Base64 编解码</div>
+                    <button class="snapshot-btn" onclick="saveSnapshot('base64')">💾 保存 Snapshot</button>
+                    <label>输入内容:</label>
+                    <div class="input-group">
+                        <textarea id="base64-input" placeholder="输入需要编码或解码的内容..."></textarea>
+                        <button class="copy-btn" onclick="copyToClipboard('base64-input')">📋</button>
+                    </div>
+                    <button onclick="base64Encode()">Base64 编码</button>
+                    <button onclick="base64Decode()">Base64 解码</button>
+                    <button onclick="clearBase64()">清空</button>
+                    <label>输出结果:</label>
+                    <div class="output-group">
+                        <div id="base64-output"></div>
+                        <button class="copy-btn" onclick="copyOutputToClipboard('base64-output')">📋</button>
+                    </div>
+                </div>
                 <div id="diy-panels"></div>
             </div>
             <div class="snapshot-panel">
@@ -231,7 +266,8 @@
             'json-extract': [],
             diff: [],
             'url-encode': [],
-            'unescape': []
+            'unescape': [],
+            'base64': []
         };
 
         // 工具切换
@@ -277,6 +313,8 @@
                 data = { input: document.getElementById('url-encode-input').value, output: document.getElementById('url-encode-output').innerHTML };
             } else if (tool === 'unescape') {
                 data = { input: document.getElementById('unescape-input').value, output: document.getElementById('unescape-output').innerHTML };
+            } else if (tool === 'base64') {
+                data = { input: document.getElementById('base64-input').value, output: document.getElementById('base64-output').innerHTML };
             } else if (tool.startsWith('diy-')) {
                 const index = parseInt(tool.replace('diy-', ''));
                 const diyTool = diyTools[index];
@@ -361,6 +399,8 @@
                 document.getElementById('url-encode-input').value = s.data.input || '';
             } else if (tool === 'unescape') {
                 document.getElementById('unescape-input').value = s.data.input || '';
+            } else if (tool === 'base64') {
+                document.getElementById('base64-input').value = s.data.input || '';
             } else if (tool.startsWith('diy-')) {
                 const index = parseInt(tool.replace('diy-', ''));
                 const diyTool = diyTools[index];
@@ -629,6 +669,32 @@
             document.getElementById('url-encode-output').textContent = '';
         }
 
+        // Base64 编解码
+        function base64Encode() {
+            const input = document.getElementById('base64-input').value;
+            try {
+                const encoded = btoa(unescape(encodeURIComponent(input)));
+                document.getElementById('base64-output').textContent = encoded;
+            } catch (e) {
+                document.getElementById('base64-output').textContent = '编码失败: ' + e.message;
+            }
+        }
+
+        function base64Decode() {
+            const input = document.getElementById('base64-input').value;
+            try {
+                const decoded = decodeURIComponent(escape(atob(input)));
+                document.getElementById('base64-output').textContent = decoded;
+            } catch (e) {
+                document.getElementById('base64-output').textContent = '解码失败: ' + e.message;
+            }
+        }
+
+        function clearBase64() {
+            document.getElementById('base64-input').value = '';
+            document.getElementById('base64-output').textContent = '';
+        }
+
         // 字符串转义
         function doUnescape() {
             const input = document.getElementById('unescape-input').value;
@@ -657,6 +723,146 @@
         function clearUnescape() {
             document.getElementById('unescape-input').value = '';
             document.getElementById('unescape-output').textContent = '';
+        }
+
+        // CSV 表格
+        let csvData = [];
+        let csvFileHandle = null;
+
+        async function loadCSVFile() {
+            const fileInput = document.getElementById('csv-file-input');
+            const file = fileInput.files[0];
+            if (!file) return;
+            
+            csvFileHandle = file;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                parseCSV(e.target.result);
+            };
+            reader.readAsText(file);
+        }
+
+        async function openCSVFile() {
+            try {
+                const [handle] = await window.showOpenFilePicker({
+                    types: [{
+                        description: 'CSV Files',
+                        accept: { 'text/csv': ['.csv', '.txt'] }
+                    }],
+                });
+                const file = await handle.getFile();
+                csvFileHandle = { handle: handle, name: file.name };
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    parseCSV(e.target.result);
+                };
+                reader.readAsText(file);
+            } catch (e) {
+                if (e.name !== 'AbortError') {
+                    console.error('打开文件失败:', e);
+                }
+            }
+        }
+
+        function parseCSV(text) {
+            const lines = text.split('\n').filter(line => line.trim());
+            csvData = lines.map(line => {
+                const cells = [];
+                let current = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        cells.push(current);
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                cells.push(current);
+                return cells;
+            });
+            renderCSVTable();
+        }
+
+        function renderCSVTable() {
+            const table = document.getElementById('csv-table');
+            table.innerHTML = '';
+            
+            if (csvData.length === 0) return;
+
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            csvData[0].forEach((cell, index) => {
+                const th = document.createElement('th');
+                th.textContent = cell;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            for (let i = 1; i < csvData.length; i++) {
+                const row = document.createElement('tr');
+                csvData[i].forEach((cell, index) => {
+                    const td = document.createElement('td');
+                    td.contentEditable = true;
+                    td.textContent = cell;
+                    td.dataset.row = i;
+                    td.dataset.col = index;
+                    td.addEventListener('blur', function() {
+                        csvData[this.dataset.row][this.dataset.col] = this.textContent;
+                    });
+                    row.appendChild(td);
+                });
+                tbody.appendChild(row);
+            }
+            table.appendChild(tbody);
+        }
+
+        function csvToString() {
+            return csvData.map(row => 
+                row.map(cell => {
+                    if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
+                        return '"' + cell.replace(/"/g, '""') + '"';
+                    }
+                    return cell;
+                }).join(',')
+            ).join('\n');
+        }
+
+        async function saveCSV() {
+            const content = csvToString();
+            if (!content) {
+                alert('没有数据可保存');
+                return;
+            }
+            
+            if (csvFileHandle && csvFileHandle.handle) {
+                const writable = await csvFileHandle.handle.createWritable();
+                await writable.write(content);
+                await writable.close();
+                alert('保存成功');
+            } else if (csvFileHandle) {
+                const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = csvFileHandle.name || 'data.csv';
+                link.click();
+            } else {
+                alert('请先打开一个CSV文件');
+            }
+        }
+
+        function clearCSV() {
+            csvData = [];
+            csvFileHandle = null;
+            document.getElementById('csv-file-input').value = '';
+            renderCSVTable();
         }
 
         function escapeHtml(text) {
