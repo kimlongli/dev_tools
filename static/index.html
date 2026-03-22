@@ -70,6 +70,10 @@
         .csv-table td { background: #252526; }
         .csv-table td:focus { outline: 2px solid #007acc; outline-offset: -2px; }
         .csv-table tr:hover td { background: #2a2d2e; }
+        .csv-context-menu { position: absolute; background: #252526; border: 1px solid #3c3c3c; box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 1000; min-width: 150px; }
+        .csv-context-menu-item { padding: 8px 15px; cursor: pointer; font-size: 13px; color: #d4d4d4; }
+        .csv-context-menu-item:hover { background: #094771; }
+        .csv-context-menu-divider { height: 1px; background: #3c3c3c; margin: 4px 0; }
     </style>
 </head>
 <body>
@@ -224,11 +228,13 @@
                 <div id="csv" class="tool-panel">
                     <div class="tool-title">CSV 表格</div>
                     <button onclick="openCSVFile()">打开 CSV</button>
-                    <input type="file" id="csv-file-input" accept=".csv" onchange="loadCSVFile()" style="display:none;">
+                    <input type="file" id="csv-file-input" accept=".csv" onchange="loadCSVFile()" style="position:absolute;opacity:0;z-index:-1;">
                     <button onclick="saveCSV()">保存 CSV</button>
+                    <button onclick="undoCsv()">撤销</button>
                     <div class="csv-table-container">
                         <table id="csv-table" class="csv-table"></table>
                     </div>
+                    <div id="csv-context-menu" class="csv-context-menu" style="display:none;"></div>
                 </div>
                 <div id="base64" class="tool-panel">
                     <div class="tool-title">Base64 编解码</div>
@@ -728,19 +734,23 @@
         // CSV 表格
         let csvData = [];
         let csvFileHandle = null;
+        let csvHistory = [];
+        const maxHistorySize = 50;
 
-        async function loadCSVFile() {
-            const fileInput = document.getElementById('csv-file-input');
-            const file = fileInput.files[0];
-            if (!file) return;
-            
-            csvFileHandle = file;
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                parseCSV(e.target.result);
-            };
-            reader.readAsText(file);
+        function saveCsvHistory() {
+            csvHistory.push(JSON.parse(JSON.stringify(csvData)));
+            if (csvHistory.length > maxHistorySize) {
+                csvHistory.shift();
+            }
+        }
+
+        function undoCsv() {
+            if (csvHistory.length === 0) {
+                alert('没有可撤销的操作');
+                return;
+            }
+            csvData = csvHistory.pop();
+            renderCSVTable();
         }
 
         async function openCSVFile() {
@@ -766,7 +776,22 @@
             }
         }
 
+        function loadCSVFile() {
+            const fileInput = document.getElementById('csv-file-input');
+            const file = fileInput.files[0];
+            if (!file) return;
+            
+            csvFileHandle = { name: file.name, handle: null };
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                parseCSV(e.target.result);
+            };
+            reader.readAsText(file);
+        }
+
         function parseCSV(text) {
+            csvHistory = [];
             const lines = text.split('\n').filter(line => line.trim());
             csvData = lines.map(line => {
                 const cells = [];
@@ -799,7 +824,16 @@
             const headerRow = document.createElement('tr');
             csvData[0].forEach((cell, index) => {
                 const th = document.createElement('th');
+                th.contentEditable = true;
                 th.textContent = cell;
+                th.dataset.col = index;
+                th.addEventListener('blur', function() {
+                    csvData[0][this.dataset.col] = this.textContent;
+                });
+                th.addEventListener('contextmenu', function(e) {
+                    e.preventDefault();
+                    showCsvContextMenu(e.clientX, e.clientY, 'column', index);
+                });
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
@@ -808,6 +842,11 @@
             const tbody = document.createElement('tbody');
             for (let i = 1; i < csvData.length; i++) {
                 const row = document.createElement('tr');
+                row.dataset.row = i;
+                row.addEventListener('contextmenu', function(e) {
+                    e.preventDefault();
+                    showCsvContextMenu(e.clientX, e.clientY, 'row', i);
+                });
                 csvData[i].forEach((cell, index) => {
                     const td = document.createElement('td');
                     td.contentEditable = true;
@@ -822,6 +861,38 @@
                 tbody.appendChild(row);
             }
             table.appendChild(tbody);
+        }
+        
+        function showCsvContextMenu(x, y, type, index) {
+            const menu = document.getElementById('csv-context-menu');
+            menu.innerHTML = '';
+            
+            if (type === 'row') {
+                menu.innerHTML = `
+                    <div class="csv-context-menu-item" onclick="addCsvRowBefore(${index})">在此行之前添加行</div>
+                    <div class="csv-context-menu-item" onclick="addCsvRowAfter(${index})">在此行之后添加行</div>
+                    <div class="csv-context-menu-divider"></div>
+                    <div class="csv-context-menu-item" onclick="deleteCsvRowByIndex(${index})">删除此行</div>
+                `;
+            } else if (type === 'column') {
+                menu.innerHTML = `
+                    <div class="csv-context-menu-item" onclick="addCsvColumnBefore(${index})">在此列之前添加列</div>
+                    <div class="csv-context-menu-item" onclick="addCsvColumnAfter(${index})">在此列之后添加列</div>
+                    <div class="csv-context-menu-divider"></div>
+                    <div class="csv-context-menu-item" onclick="deleteCsvColumnByIndex(${index})">删除此列</div>
+                `;
+            }
+            
+            menu.style.display = 'block';
+            menu.style.left = x + 'px';
+            menu.style.top = y + 'px';
+            
+            document.addEventListener('click', hideCsvContextMenu);
+        }
+        
+        function hideCsvContextMenu() {
+            document.getElementById('csv-context-menu').style.display = 'none';
+            document.removeEventListener('click', hideCsvContextMenu);
         }
 
         function csvToString() {
@@ -842,26 +913,82 @@
                 return;
             }
             
-            if (csvFileHandle && csvFileHandle.handle) {
-                const writable = await csvFileHandle.handle.createWritable();
-                await writable.write(content);
-                await writable.close();
-                alert('保存成功');
-            } else if (csvFileHandle) {
-                const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = csvFileHandle.name || 'data.csv';
-                link.click();
-            } else {
+            if (!csvFileHandle) {
                 alert('请先打开一个CSV文件');
+                return;
+            }
+            
+            try {
+                if (csvFileHandle.handle) {
+                    const writable = await csvFileHandle.handle.createWritable();
+                    await writable.write(content);
+                    await writable.close();
+                    alert('保存成功');
+                } else {
+                    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = csvFileHandle.name || 'data.csv';
+                    link.click();
+                }
+            } catch (e) {
+                alert('保存失败: ' + e.message);
             }
         }
 
         function clearCSV() {
             csvData = [];
             csvFileHandle = null;
+            csvHistory = [];
             document.getElementById('csv-file-input').value = '';
+            renderCSVTable();
+        }
+
+        function addCsvRowBefore(index) {
+            hideCsvContextMenu();
+            saveCsvHistory();
+            const colCount = csvData[0].length;
+            const newRow = new Array(colCount).fill('');
+            csvData.splice(index, 0, newRow);
+            renderCSVTable();
+        }
+
+        function addCsvRowAfter(index) {
+            hideCsvContextMenu();
+            saveCsvHistory();
+            const colCount = csvData[0].length;
+            const newRow = new Array(colCount).fill('');
+            csvData.splice(index + 1, 0, newRow);
+            renderCSVTable();
+        }
+
+        function deleteCsvRowByIndex(index) {
+            hideCsvContextMenu();
+            if (csvData.length <= 1) return;
+            saveCsvHistory();
+            csvData.splice(index, 1);
+            renderCSVTable();
+        }
+
+        function addCsvColumnBefore(index) {
+            hideCsvContextMenu();
+            saveCsvHistory();
+            csvData.forEach(row => row.splice(index, 0, ''));
+            renderCSVTable();
+        }
+
+        function addCsvColumnAfter(index) {
+            hideCsvContextMenu();
+            saveCsvHistory();
+            csvData.forEach(row => row.splice(index + 1, 0, ''));
+            renderCSVTable();
+        }
+
+        function deleteCsvColumnByIndex(index) {
+            hideCsvContextMenu();
+            if (csvData[0].length === 0) return;
+            saveCsvHistory();
+            csvData.forEach(row => row.splice(index, 1));
             renderCSVTable();
         }
 
