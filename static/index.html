@@ -199,14 +199,28 @@
         // 工具切换
         let currentTool = 'json';
         
+        function switchTool(tool) {
+            document.querySelectorAll('.tool-item').forEach(i => i.classList.remove('active'));
+            document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
+            const toolItem = document.querySelector(`.tool-item[data-tool="${tool}"]`);
+            if (toolItem) {
+                toolItem.classList.add('active');
+            }
+            currentTool = tool;
+            const panel = document.getElementById(tool);
+            if (panel) {
+                panel.classList.add('active');
+            }
+            renderSnapshots();
+            
+            const url = new URL(window.location);
+            url.searchParams.set('tool', tool);
+            history.pushState({}, '', url);
+        }
+        
         document.querySelectorAll('.tool-item').forEach(item => {
             item.addEventListener('click', () => {
-                document.querySelectorAll('.tool-item').forEach(i => i.classList.remove('active'));
-                document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
-                item.classList.add('active');
-                currentTool = item.dataset.tool;
-                document.getElementById(currentTool).classList.add('active');
-                renderSnapshots();
+                switchTool(item.dataset.tool);
             });
         });
 
@@ -633,12 +647,7 @@
                 panelsContainer.appendChild(panel);
 
                 toolItem.addEventListener('click', () => {
-                    document.querySelectorAll('.tool-item').forEach(i => i.classList.remove('active'));
-                    document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
-                    toolItem.classList.add('active');
-                    currentTool = toolId;
-                    document.getElementById(toolId).classList.add('active');
-                    renderSnapshots();
+                    switchTool(toolId);
                 });
             });
         }
@@ -708,6 +717,12 @@
         // 初始化
         loadSnapshots();
         loadDiyTools();
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const toolParam = urlParams.get('tool');
+        if (toolParam) {
+            switchTool(toolParam);
+        }
     </script>
 </body>
 </html>
