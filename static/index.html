@@ -73,6 +73,7 @@
         <div class="tool-item" data-tool="json-extract">JSON 提取</div>
         <div class="tool-item" data-tool="diff">文本比较器</div>
         <div class="tool-item" data-tool="url-encode">URL 编解码</div>
+        <div class="tool-item" data-tool="unescape">字符串转义</div>
         <div id="diy-tools-section" style="display: none;">
             <div class="sidebar-title" style="padding: 15px; font-size: 14px; border-top: 1px solid #3c3c3c;">自定义工具</div>
             <div id="diy-tools-list"></div>
@@ -194,6 +195,23 @@
                         <button class="copy-btn" onclick="copyOutputToClipboard('url-encode-output')">📋</button>
                     </div>
                 </div>
+                <div id="unescape" class="tool-panel">
+                    <div class="tool-title">字符串转义</div>
+                    <button class="snapshot-btn" onclick="saveSnapshot('unescape')">💾 保存 Snapshot</button>
+                    <label>输入内容 (双引号内的转义字符串):</label>
+                    <div class="input-group">
+                        <textarea id="unescape-input" placeholder="输入需要转义的字符串，如: \\\"ddddd\\\""></textarea>
+                        <button class="copy-btn" onclick="copyToClipboard('unescape-input')">📋</button>
+                    </div>
+                    <button onclick="doUnescape()">转义</button>
+                    <button onclick="doEscape()">还原</button>
+                    <button onclick="clearUnescape()">清空</button>
+                    <label>输出结果:</label>
+                    <div class="output-group">
+                        <div id="unescape-output"></div>
+                        <button class="copy-btn" onclick="copyOutputToClipboard('unescape-output')">📋</button>
+                    </div>
+                </div>
                 <div id="diy-panels"></div>
             </div>
             <div class="snapshot-panel">
@@ -212,7 +230,8 @@
             timestamp: [],
             'json-extract': [],
             diff: [],
-            'url-encode': []
+            'url-encode': [],
+            'unescape': []
         };
 
         // 工具切换
@@ -256,6 +275,8 @@
                 data = { original: document.getElementById('diff-original').value, new: document.getElementById('diff-new').value };
             } else if (tool === 'url-encode') {
                 data = { input: document.getElementById('url-encode-input').value, output: document.getElementById('url-encode-output').innerHTML };
+            } else if (tool === 'unescape') {
+                data = { input: document.getElementById('unescape-input').value, output: document.getElementById('unescape-output').innerHTML };
             } else if (tool.startsWith('diy-')) {
                 const index = parseInt(tool.replace('diy-', ''));
                 const diyTool = diyTools[index];
@@ -338,6 +359,8 @@
                 document.getElementById('diff-new').value = s.data.new || '';
             } else if (tool === 'url-encode') {
                 document.getElementById('url-encode-input').value = s.data.input || '';
+            } else if (tool === 'unescape') {
+                document.getElementById('unescape-input').value = s.data.input || '';
             } else if (tool.startsWith('diy-')) {
                 const index = parseInt(tool.replace('diy-', ''));
                 const diyTool = diyTools[index];
@@ -604,6 +627,36 @@
         function clearUrlEncode() {
             document.getElementById('url-encode-input').value = '';
             document.getElementById('url-encode-output').textContent = '';
+        }
+
+        // 字符串转义
+        function doUnescape() {
+            const input = document.getElementById('unescape-input').value;
+            let result = input;
+            result = result.replace(/\\\\/g, '\\');
+            result = result.replace(/\\"/g, '"');
+            result = result.replace(/\\n/g, '\n');
+            result = result.replace(/\\t/g, '\t');
+            result = result.replace(/\\r/g, '\r');
+            result = result.replace(/\\'/g, "'");
+            document.getElementById('unescape-output').textContent = result;
+        }
+
+        function doEscape() {
+            const input = document.getElementById('unescape-input').value;
+            let result = input;
+            result = result.replace(/\\/g, '\\\\');
+            result = result.replace(/"/g, '\\"');
+            result = result.replace(/\n/g, '\\n');
+            result = result.replace(/\t/g, '\\t');
+            result = result.replace(/\r/g, '\\r');
+            result = result.replace(/'/g, "\\'");
+            document.getElementById('unescape-output').textContent = result;
+        }
+
+        function clearUnescape() {
+            document.getElementById('unescape-input').value = '';
+            document.getElementById('unescape-output').textContent = '';
         }
 
         function escapeHtml(text) {
