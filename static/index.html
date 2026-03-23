@@ -65,9 +65,9 @@
         .output-group .copy-btn { top: 10px; }
         .csv-table-container { overflow: auto; max-height: 500px; margin-top: 15px; border: 1px solid #3c3c3c; }
         .csv-table { border-collapse: collapse; width: 100%; font-size: 14px; }
-        .csv-table th, .csv-table td { border: 1px solid #3c3c3c; padding: 8px 12px; text-align: left; }
+        .csv-table th, .csv-table td { border: 1px solid #3c3c3c; padding: 8px 12px; text-align: left; white-space: pre-wrap; }
         .csv-table th { background: #2d2d2d; color: #9cdcfe; }
-        .csv-table td { background: #252526; }
+        .csv-table td { background: #252526; vertical-align: top; }
         .csv-table td:focus { outline: 2px solid #007acc; outline-offset: -2px; }
         .csv-table tr:hover td { background: #2a2d2e; }
         .csv-context-menu { position: absolute; background: #252526; border: 1px solid #3c3c3c; box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 1000; min-width: 150px; }
@@ -791,26 +791,46 @@
         }
 
         function parseCSV(text) {
-            csvHistory = [];
-            const lines = text.split('\n').filter(line => line.trim());
-            csvData = lines.map(line => {
-                const cells = [];
-                let current = '';
-                let inQuotes = false;
-                for (let i = 0; i < line.length; i++) {
-                    const char = line[i];
-                    if (char === '"') {
-                        inQuotes = !inQuotes;
-                    } else if (char === ',' && !inQuotes) {
-                        cells.push(current);
-                        current = '';
+            const rows = [];
+            let currentRow = [];
+            let currentCell = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const nextChar = text[i + 1];
+                
+                if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                        currentCell += '"';
+                        i++;
                     } else {
-                        current += char;
+                        inQuotes = !inQuotes;
                     }
+                } else if (char === ',' && !inQuotes) {
+                    currentRow.push(currentCell);
+                    currentCell = '';
+                } else if ((char === '\n' || char === '\r') && !inQuotes) {
+                    if (char === '\r' && nextChar === '\n') {
+                        i++;
+                    }
+                    currentRow.push(currentCell);
+                    if (currentRow.some(cell => cell !== '')) {
+                        rows.push(currentRow);
+                    }
+                    currentRow = [];
+                    currentCell = '';
+                } else {
+                    currentCell += char;
                 }
-                cells.push(current);
-                return cells;
-            });
+            }
+            
+            currentRow.push(currentCell);
+            if (currentRow.some(cell => cell !== '')) {
+                rows.push(currentRow);
+            }
+            
+            csvData = rows;
             renderCSVTable();
         }
 
