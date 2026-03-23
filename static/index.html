@@ -373,6 +373,34 @@
             }
         }
 
+        async function saveDiyGroupSnapshot(groupId, toolIds) {
+            const ids = toolIds.split(',');
+            const data = { tools: [] };
+            
+            for (const toolId of ids) {
+                const index = parseInt(toolId.replace('diy-', ''));
+                const diyTool = diyTools[index];
+                if (!diyTool) continue;
+                
+                const fields = {};
+                diyTool.fields.forEach((field, i) => {
+                    fields['field_' + i] = document.getElementById(toolId + '-field-' + i).value;
+                });
+                data.tools.push({ toolId: toolId, fields: fields });
+            }
+            
+            try {
+                await fetch('/api/snapshots', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'save', tool: groupId, data: data })
+                });
+                loadSnapshots();
+            } catch (e) {
+                alert('保存失败: ' + e.message);
+            }
+        }
+
         async function loadSnapshots() {
             try {
                 const response = await fetch('/api/snapshots');
@@ -386,16 +414,32 @@
         function renderSnapshots() {
             const list = document.getElementById('snapshot-list');
             list.innerHTML = '';
-            const toolSnapshots = (snapshots[currentTool] || []).sort((a, b) => b.id - a.id);
-            toolSnapshots.forEach(s => {
+            
+            let toolIds = [currentTool];
+            if (currentTool.startsWith('diy-group-')) {
+                toolIds = [currentTool];
+            } else if (currentTool.startsWith('diy-')) {
+                toolIds = [currentTool];
+            }
+            
+            let allSnapshots = [];
+            toolIds.forEach(toolId => {
+                const toolSnaps = snapshots[toolId] || [];
+                toolSnaps.forEach(s => {
+                    allSnapshots.push({ ...s, toolId: toolId });
+                });
+            });
+            allSnapshots.sort((a, b) => b.id - a.id);
+            
+            allSnapshots.forEach(s => {
                 const item = document.createElement('div');
                 item.className = 'snapshot-item';
                 item.innerHTML = `
                     <div class="snapshot-item-name">${s.name}</div>
                     <div class="snapshot-item-time">${s.time}</div>
                     <div class="snapshot-item-actions">
-                        <button onclick="loadSnapshot('${currentTool}', ${s.id})">加载</button>
-                        <button class="snapshot-delete-btn" onclick="deleteSnapshot('${currentTool}', ${s.id})">删除</button>
+                        <button onclick="loadSnapshot('${s.toolId}', ${s.id})">加载</button>
+                        <button class="snapshot-delete-btn" onclick="deleteSnapshot('${s.toolId}', ${s.id})">删除</button>
                     </div>
                 `;
                 list.appendChild(item);
@@ -418,6 +462,23 @@
         function loadSnapshot(tool, id) {
             const s = snapshots[tool].find(s => s.id === id);
             if (!s) return;
+            
+            if (tool.startsWith('diy-group-')) {
+                if (s.data.tools) {
+                    s.data.tools.forEach(t => {
+                        const index = parseInt(t.toolId.replace('diy-', ''));
+                        const diyTool = diyTools[index];
+                        if (diyTool && t.fields) {
+                            diyTool.fields.forEach((field, i) => {
+                                const el = document.getElementById(t.toolId + '-field-' + i);
+                                if (el) el.value = t.fields['field_' + i] || '';
+                            });
+                        }
+                    });
+                }
+                return;
+            }
+            
             if (tool === 'json') {
                 document.getElementById('json-input').value = s.data.input || '';
             } else if (tool === 'timestamp') {
@@ -1198,59 +1259,83 @@
 
             const toolsList = document.getElementById('diy-tools-list');
             const panelsContainer = document.getElementById('diy-panels');
+            toolsList.innerHTML = '';
+            panelsContainer.innerHTML = '';
 
+            const groups = {};
             diyTools.forEach((tool, index) => {
-                const toolId = 'diy-' + index;
+                const groupName = tool.group_name || '自定义工具';
+                if (!groups[groupName]) {
+                    groups[groupName] = [];
+                }
+                groups[groupName].push({ ...tool, originalIndex: index });
+            });
 
-                const toolItem = document.createElement('div');
-                toolItem.className = 'tool-item';
-                toolItem.dataset.tool = toolId;
-                toolItem.textContent = tool.name;
-                toolsList.appendChild(toolItem);
+            let toolIndex = 0;
+            Object.keys(groups).forEach((groupName) => {
+                const groupTools = groups[groupName];
+                const groupId = 'diy-group-' + Object.keys(groups).indexOf(groupName);
+
+                const groupItem = document.createElement('div');
+                groupItem.className = 'tool-item';
+                groupItem.dataset.tool = groupId;
+                groupItem.textContent = groupName;
+                groupItem.style.fontWeight = 'bold';
+                toolsList.appendChild(groupItem);
 
                 const panel = document.createElement('div');
-                panel.id = toolId;
+                panel.id = groupId;
                 panel.className = 'tool-panel';
 
-                let fieldsHtml = '';
-                tool.fields.forEach((field, i) => {
-                    const fieldType = field.field_type || 'text';
-                    if (fieldType === 'row') {
-                        fieldsHtml += `
-                            <label>${escapeHtml(field.field_name)}:</label>
-                            <div class="input-group">
-                                <input type="text" id="${toolId}-field-${i}" placeholder="输入 ${escapeHtml(field.field_name)}...">
-                                <button class="copy-btn" onclick="copyToClipboard('${toolId}-field-${i}')">📋</button>
-                            </div>
-                        `;
-                    } else {
-                        fieldsHtml += `
-                            <label>${escapeHtml(field.field_name)}:</label>
-                            <div class="input-group">
-                                <textarea id="${toolId}-field-${i}" placeholder="输入 ${escapeHtml(field.field_name)}..."></textarea>
-                                <button class="copy-btn" onclick="copyToClipboard('${toolId}-field-${i}')">📋</button>
-                            </div>
-                        `;
-                    }
+                let toolsHtml = '';
+                groupTools.forEach((tool) => {
+                    const toolId = 'diy-' + tool.originalIndex;
+                    let fieldsHtml = '';
+                    tool.fields.forEach((field, i) => {
+                        const fieldType = field.field_type || 'text';
+                        if (fieldType === 'row') {
+                            fieldsHtml += `
+                                <label>${escapeHtml(field.field_name)}:</label>
+                                <div class="input-group">
+                                    <input type="text" id="${toolId}-field-${i}" placeholder="输入 ${escapeHtml(field.field_name)}...">
+                                    <button class="copy-btn" onclick="copyToClipboard('${toolId}-field-${i}')">📋</button>
+                                </div>
+                            `;
+                        } else {
+                            fieldsHtml += `
+                                <label>${escapeHtml(field.field_name)}:</label>
+                                <div class="input-group">
+                                    <textarea id="${toolId}-field-${i}" placeholder="输入 ${escapeHtml(field.field_name)}..."></textarea>
+                                    <button class="copy-btn" onclick="copyToClipboard('${toolId}-field-${i}')">📋</button>
+                                </div>
+                            `;
+                        }
+                    });
+
+                    toolsHtml += `
+                        <div class="tool-title" style="margin-top: 20px;">${escapeHtml(tool.name)}</div>
+                        ${fieldsHtml}
+                        <button onclick="execDiyTool(${tool.originalIndex})">执行</button>
+                        <button onclick="clearDiyTool(${tool.originalIndex})">清空</button>
+                        <label>执行结果:</label>
+                        <div class="output-group">
+                            <div id="${toolId}-output" class="result"></div>
+                            <button class="copy-btn" onclick="copyOutputToClipboard('${toolId}-output')">📋</button>
+                        </div>
+                    `;
                 });
 
+                const allToolIds = groupTools.map(t => 'diy-' + t.originalIndex).join(',');
                 panel.innerHTML = `
-                    <div class="tool-title">${escapeHtml(tool.name)}</div>
-                    <button class="snapshot-btn" onclick="saveSnapshot('${toolId}')">💾 保存 Snapshot</button>
-                    ${fieldsHtml}
-                    <button onclick="execDiyTool(${index})">执行</button>
-                    <button onclick="clearDiyTool(${index})">清空</button>
-                    <label>执行结果:</label>
-                    <div class="output-group">
-                        <div id="${toolId}-output" class="result"></div>
-                        <button class="copy-btn" onclick="copyOutputToClipboard('${toolId}-output')">📋</button>
-                    </div>
+                    <div class="tool-title">${escapeHtml(groupName)}</div>
+                    <button class="snapshot-btn" onclick="saveDiyGroupSnapshot('${groupId}', '${allToolIds}')">💾 保存 Snapshot</button>
+                    ${toolsHtml}
                 `;
 
                 panelsContainer.appendChild(panel);
 
-                toolItem.addEventListener('click', () => {
-                    switchTool(toolId);
+                groupItem.addEventListener('click', () => {
+                    switchTool(groupId);
                 });
             });
         }

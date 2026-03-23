@@ -31,10 +31,20 @@ type DiyTool struct {
 	Cmd    string     `json:"cmd"`
 }
 
+type DiyToolGroup struct {
+	GroupName string    `json:"group_name"`
+	Tools     []DiyTool `json:"tools"`
+}
+
+type DiyToolWithGroup struct {
+	GroupName string `json:"group_name,omitempty"`
+	DiyTool
+}
+
 var (
 	snapshots     Snapshots
 	snapshotsFile = "./snapshots.json"
-	diyTools      []DiyTool
+	diyTools      []DiyToolWithGroup
 	mu            sync.Mutex
 )
 
@@ -63,7 +73,7 @@ func saveSnapshots() {
 }
 
 func loadDiyTools() {
-	diyTools = []DiyTool{}
+	diyTools = []DiyToolWithGroup{}
 
 	entries, err := os.ReadDir("./diy_tools")
 	if err != nil {
@@ -80,12 +90,23 @@ func loadDiyTools() {
 			continue
 		}
 
-		var tool DiyTool
-		if err := json.Unmarshal(data, &tool); err != nil {
+		// 尝试解析为工具组格式
+		var toolGroup DiyToolGroup
+		if err := json.Unmarshal(data, &toolGroup); err == nil && len(toolGroup.Tools) > 0 {
+			for _, t := range toolGroup.Tools {
+				diyTools = append(diyTools, DiyToolWithGroup{
+					GroupName: toolGroup.GroupName,
+					DiyTool:   t,
+				})
+			}
 			continue
 		}
 
-		diyTools = append(diyTools, tool)
+		// 尝试解析为单个工具对象（向后兼容）
+		var tool DiyTool
+		if err := json.Unmarshal(data, &tool); err == nil && tool.Name != "" {
+			diyTools = append(diyTools, DiyToolWithGroup{DiyTool: tool})
+		}
 	}
 }
 

@@ -1,14 +1,29 @@
 {
-	"name": "Echo测试",
-	"fields": [
+	"group_name": "系统工具",
+	"tools": [
 		{
-			"field_name": "参数1",
-			"field_type": "text"
+			"name": "Echo测试",
+			"fields": [
+				{
+					"field_name": "参数1",
+					"field_type": "text"
+				},
+				{
+					"field_name": "参数2",
+					"field_type": "row"
+				}
+			],
+			"cmd": "/bin/echo"
 		},
 		{
-			"field_name": "参数2",
-			"field_type": "row"
+			"name": "日期时间",
+			"fields": [
+				{
+					"field_name": "格式",
+					"field_type": "text"
+				}
+			],
+			"cmd": "/bin/date"
 		}
-	],
-	"cmd": "/bin/echo"
+	]
 }
