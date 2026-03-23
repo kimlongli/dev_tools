@@ -1404,13 +1404,15 @@
 
         // 初始化
         loadSnapshots();
-        loadDiyTools();
         
         const urlParams = new URLSearchParams(window.location.search);
         const toolParam = urlParams.get('tool');
-        if (toolParam) {
-            switchTool(toolParam);
-        }
+        
+        loadDiyTools().then(() => {
+            if (toolParam) {
+                switchTool(toolParam);
+            }
+        });
     </script>
 </body>
 </html>
