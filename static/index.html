@@ -754,25 +754,29 @@
         }
 
         async function openCSVFile() {
-            try {
-                const [handle] = await window.showOpenFilePicker({
-                    types: [{
-                        description: 'CSV Files',
-                        accept: { 'text/csv': ['.csv', '.txt'] }
-                    }],
-                });
-                const file = await handle.getFile();
-                csvFileHandle = { handle: handle, name: file.name };
-                
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    parseCSV(e.target.result);
-                };
-                reader.readAsText(file);
-            } catch (e) {
-                if (e.name !== 'AbortError') {
-                    console.error('打开文件失败:', e);
+            if (window.showOpenFilePicker) {
+                try {
+                    const [handle] = await window.showOpenFilePicker({
+                        types: [{
+                            description: 'CSV Files',
+                            accept: { 'text/csv': ['.csv', '.txt'] }
+                        }],
+                    });
+                    const file = await handle.getFile();
+                    csvFileHandle = { handle: handle, name: file.name };
+                    
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        parseCSV(e.target.result);
+                    };
+                    reader.readAsText(file);
+                } catch (e) {
+                    if (e.name !== 'AbortError') {
+                        console.error('打开文件失败:', e);
+                    }
                 }
+            } else {
+                document.getElementById('csv-file-input').click();
             }
         }
 
@@ -939,7 +943,7 @@
             }
             
             try {
-                if (csvFileHandle.handle) {
+                if (csvFileHandle.handle && window.showSaveFilePicker) {
                     const writable = await csvFileHandle.handle.createWritable();
                     await writable.write(content);
                     await writable.close();
