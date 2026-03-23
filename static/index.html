@@ -70,10 +70,25 @@
         .csv-table td { background: #252526; vertical-align: top; }
         .csv-table td:focus { outline: 2px solid #007acc; outline-offset: -2px; }
         .csv-table tr:hover td { background: #2a2d2e; }
+        .csv-table th[contenteditable], .csv-table td[contenteditable] { -moz-appearance: textfield; }
         .csv-context-menu { position: absolute; background: #252526; border: 1px solid #3c3c3c; box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 1000; min-width: 150px; }
         .csv-context-menu-item { padding: 8px 15px; cursor: pointer; font-size: 13px; color: #d4d4d4; }
         .csv-context-menu-item:hover { background: #094771; }
         .csv-context-menu-divider { height: 1px; background: #3c3c3c; margin: 4px 0; }
+        .file-picker-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 2000; display: none; justify-content: center; align-items: center; }
+        .file-picker-overlay.active { display: flex; }
+        .file-picker { background: #252526; border: 1px solid #3c3c3c; border-radius: 8px; width: 600px; max-height: 80vh; display: flex; flex-direction: column; }
+        .file-picker-header { padding: 15px; border-bottom: 1px solid #3c3c3c; display: flex; justify-content: space-between; align-items: center; }
+        .file-picker-title { font-size: 16px; font-weight: bold; }
+        .file-picker-close { background: none; border: none; color: #808080; cursor: pointer; font-size: 20px; padding: 0; }
+        .file-picker-path { padding: 10px 15px; background: #2d2d2d; font-size: 13px; color: #9cdcfe; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .file-picker-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .file-picker-item { padding: 8px 12px; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 8px; font-size: 14px; }
+        .file-picker-item:hover { background: #37373d; }
+        .file-picker-item.directory { color: #d4d4d4; }
+        .file-picker-item.file { color: #9cdcfe; }
+        .file-picker-item-icon { width: 16px; text-align: center; }
+        .file-picker-footer { padding: 15px; border-top: 1px solid #3c3c3c; display: flex; gap: 10px; justify-content: flex-end; }
     </style>
 </head>
 <body>
@@ -227,7 +242,7 @@
                 </div>
                 <div id="csv" class="tool-panel">
                     <div class="tool-title">CSV 表格</div>
-                    <button onclick="openCSVFile()">打开 CSV</button>
+                    <button onclick="openCSVFilePicker()">打开 CSV</button>
                     <input type="file" id="csv-file-input" accept=".csv" onchange="loadCSVFile()" style="position:absolute;opacity:0;z-index:-1;">
                     <button onclick="saveCSV()">保存 CSV</button>
                     <button onclick="undoCsv()">撤销</button>
@@ -235,6 +250,20 @@
                         <table id="csv-table" class="csv-table"></table>
                     </div>
                     <div id="csv-context-menu" class="csv-context-menu" style="display:none;"></div>
+                </div>
+
+                <div id="file-picker-overlay" class="file-picker-overlay">
+                    <div class="file-picker">
+                        <div class="file-picker-header">
+                            <span class="file-picker-title">选择文件</span>
+                            <button class="file-picker-close" onclick="closeFilePicker()">×</button>
+                        </div>
+                        <div class="file-picker-path" id="file-picker-path"></div>
+                        <div class="file-picker-list" id="file-picker-list"></div>
+                        <div class="file-picker-footer">
+                            <button onclick="closeFilePicker()">取消</button>
+                        </div>
+                    </div>
                 </div>
                 <div id="base64" class="tool-panel">
                     <div class="tool-title">Base64 编解码</div>
@@ -763,7 +792,7 @@
                         }],
                     });
                     const file = await handle.getFile();
-                    csvFileHandle = { handle: handle, name: file.name };
+                    csvFileHandle = { handle: handle, name: file.name, path: file.name };
                     
                     const reader = new FileReader();
                     reader.onload = function(e) {
@@ -776,7 +805,126 @@
                     }
                 }
             } else {
-                document.getElementById('csv-file-input').click();
+                openCSVFilePicker();
+            }
+        }
+
+        let currentPickerPath = '';
+        let isSelectingForSave = false;
+        let lastOpenedPath = '';
+
+        async function openCSVFilePicker(saveMode = false) {
+            isSelectingForSave = saveMode;
+            currentPickerPath = lastOpenedPath || '/Users/' + (await getUsername());
+            await loadFilePicker(currentPickerPath);
+            document.getElementById('file-picker-overlay').classList.add('active');
+        }
+
+        async function getUsername() {
+            return 'jinlongli';
+        }
+
+        async function loadFilePicker(path) {
+            currentPickerPath = path;
+            document.getElementById('file-picker-path').textContent = path;
+            
+            try {
+                const response = await fetch('/api/list-dir', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: path })
+                });
+                const entries = await response.json();
+                
+                const list = document.getElementById('file-picker-list');
+                list.innerHTML = '';
+                
+                if (path !== '/') {
+                    const parentItem = document.createElement('div');
+                    parentItem.className = 'file-picker-item directory';
+                    parentItem.innerHTML = '<span class="file-picker-item-icon">📁</span> ..';
+                    parentItem.onclick = () => loadFilePicker(path.split('/').slice(0, -1).join('/') || '/');
+                    list.appendChild(parentItem);
+                }
+                
+                entries.sort((a, b) => {
+                    if (a.isDir && !b.isDir) return -1;
+                    if (!a.isDir && b.isDir) return 1;
+                    return a.name.localeCompare(b.name);
+                });
+                
+                for (const entry of entries) {
+                    if (entry.isDir || entry.name.endsWith('.csv') || entry.name.endsWith('.txt')) {
+                        const item = document.createElement('div');
+                        item.className = 'file-picker-item ' + (entry.isDir ? 'directory' : 'file');
+                        item.innerHTML = '<span class="file-picker-item-icon">' + (entry.isDir ? '📁' : '📄') + '</span>' + entry.name;
+                        
+                        if (entry.isDir) {
+                            item.onclick = () => loadFilePicker(path + '/' + entry.name);
+                        } else {
+                            item.onclick = () => selectFile(path + '/' + entry.name);
+                        }
+                        list.appendChild(item);
+                    }
+                }
+            } catch (e) {
+                console.error('加载目录失败:', e);
+            }
+        }
+
+        async function selectFile(filePath) {
+            const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
+            lastOpenedPath = dirPath || '/';
+            
+            if (isSelectingForSave) {
+                csvFileHandle = { path: filePath, name: filePath.split('/').pop() };
+                closeFilePicker();
+                await saveCSVToPath(filePath);
+            } else {
+                try {
+                    const response = await fetch('/api/read-file', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: filePath })
+                    });
+                    const result = await response.json();
+                    if (result.error) {
+                        alert('读取文件失败: ' + result.error);
+                        return;
+                    }
+                    csvFileHandle = { path: filePath, name: filePath.split('/').pop() };
+                    parseCSV(result.content);
+                    closeFilePicker();
+                } catch (e) {
+                    alert('读取文件失败: ' + e.message);
+                }
+            }
+        }
+
+        function closeFilePicker() {
+            document.getElementById('file-picker-overlay').classList.remove('active');
+        }
+
+        async function saveCSVToPath(filePath) {
+            const content = csvToString();
+            if (!content) {
+                alert('没有数据可保存');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/save-file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: content, filename: filePath })
+                });
+                if (!response.ok) {
+                    alert('保存失败');
+                    return;
+                }
+                alert('保存成功');
+            } catch (e) {
+                alert('保存失败: ' + e.message);
             }
         }
 
@@ -849,10 +997,11 @@
             csvData[0].forEach((cell, index) => {
                 const th = document.createElement('th');
                 th.contentEditable = true;
-                th.textContent = cell;
+                th.innerText = cell;
                 th.dataset.col = index;
                 th.addEventListener('blur', function() {
-                    csvData[0][this.dataset.col] = this.textContent;
+                    let content = this.innerText || this.textContent;
+                    csvData[0][this.dataset.col] = content;
                 });
                 th.addEventListener('contextmenu', function(e) {
                     e.preventDefault();
@@ -874,11 +1023,12 @@
                 csvData[i].forEach((cell, index) => {
                     const td = document.createElement('td');
                     td.contentEditable = true;
-                    td.textContent = cell;
+                    td.innerText = cell;
                     td.dataset.row = i;
                     td.dataset.col = index;
                     td.addEventListener('blur', function() {
-                        csvData[this.dataset.row][this.dataset.col] = this.textContent;
+                        let content = this.innerText || this.textContent;
+                        csvData[this.dataset.row][this.dataset.col] = content;
                     });
                     row.appendChild(td);
                 });
@@ -948,12 +1098,10 @@
                     await writable.write(content);
                     await writable.close();
                     alert('保存成功');
+                } else if (csvFileHandle.path) {
+                    await saveCSVToPath(csvFileHandle.path);
                 } else {
-                    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-                    const link = document.createElement('a');
-                    link.href = URL.createObjectURL(blob);
-                    link.download = csvFileHandle.name || 'data.csv';
-                    link.click();
+                    openCSVFilePicker(true);
                 }
             } catch (e) {
                 alert('保存失败: ' + e.message);

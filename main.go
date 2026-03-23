@@ -102,20 +102,43 @@ type ExecRequest struct {
 	Args []string `json:"args"`
 }
 
+type SaveFileRequest struct {
+	Content  string `json:"content"`
+	Filename string `json:"filename"`
+}
+
+type ReadFileRequest struct {
+	Path string `json:"path"`
+}
+
+type ListDirRequest struct {
+	Path string `json:"path"`
+}
+
 func main() {
 	loadSnapshots()
 	loadDiyTools()
 
-	http.HandleFunc("/api/snapshots", handleSnapshots)
-	http.HandleFunc("/api/diy-tools", handleDiyTools)
-	http.HandleFunc("/api/exec", handleExec)
+	mux := http.NewServeMux()
 
-	fs := NewFileServer("./static")
-	http.Handle("/", fs)
+	mux.HandleFunc("/api/snapshots", handleSnapshots)
+	mux.HandleFunc("/api/diy-tools", handleDiyTools)
+	mux.HandleFunc("/api/exec", handleExec)
+	mux.HandleFunc("/api/save-file", handleSaveFile)
+	mux.HandleFunc("/api/read-file", handleReadFile)
+	mux.HandleFunc("/api/list-dir", handleListDir)
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.ServeFile(w, r, "./static/index.html")
+			return
+		}
+		http.ServeFile(w, r, "./static/"+r.URL.Path)
+	})
 
 	fmt.Println("开发者工具箱已启动!")
 	fmt.Println("请访问: http://localhost:29999")
-	http.ListenAndServe(":29999", nil)
+	http.ListenAndServe(":29999", mux)
 }
 
 // 简化版文件服务器
@@ -128,6 +151,9 @@ func NewFileServer(root string) *fileServer {
 }
 
 func (fs *fileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" {
+		r.URL.Path = "/index.html"
+	}
 	http.FileServer(http.Dir(fs.root)).ServeHTTP(w, r)
 }
 
@@ -211,4 +237,90 @@ func handleExec(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{"output": string(output)})
+}
+
+func handleSaveFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req SaveFileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	filename := req.Filename
+	if filename == "" {
+		filename = "data.csv"
+	}
+
+	err := os.WriteFile(filename, []byte(req.Content), 0644)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "path": filename})
+}
+
+func handleReadFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req ReadFileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	content, err := os.ReadFile(req.Path)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"content": string(content),
+		"path":    req.Path,
+	})
+}
+
+func handleListDir(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req ListDirRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	entries, err := os.ReadDir(req.Path)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	type DirEntry struct {
+		Name   string `json:"name"`
+		IsDir  bool   `json:"isDir"`
+		IsFile bool   `json:"isFile"`
+	}
+
+	var result []DirEntry
+	for _, e := range entries {
+		result = append(result, DirEntry{
+			Name:   e.Name(),
+			IsDir:  e.IsDir(),
+			IsFile: !e.IsDir(),
+		})
+	}
+
+	json.NewEncoder(w).Encode(result)
 }
