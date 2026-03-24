@@ -89,6 +89,27 @@
         .file-picker-item.file { color: #9cdcfe; }
         .file-picker-item-icon { width: 16px; text-align: center; }
         .file-picker-footer { padding: 15px; border-top: 1px solid #3c3c3c; display: flex; gap: 10px; justify-content: flex-end; }
+        .csv-diff-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 2000; display: none; justify-content: center; align-items: center; }
+        .csv-diff-overlay.active { display: flex; }
+        .csv-diff-modal { background: #252526; border: 1px solid #3c3c3c; border-radius: 8px; width: 700px; max-height: 80vh; display: flex; flex-direction: column; }
+        .csv-diff-header { padding: 15px; border-bottom: 1px solid #3c3c3c; display: flex; justify-content: space-between; align-items: center; }
+        .csv-diff-title { font-size: 16px; font-weight: bold; }
+        .csv-diff-close { background: none; border: none; color: #808080; cursor: pointer; font-size: 20px; padding: 0; }
+        .csv-diff-content { flex: 1; overflow-y: auto; padding: 15px; max-height: 60vh; white-space: pre-wrap; word-break: break-all; }
+        .csv-diff-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+        .csv-diff-table th { background: #2d2d2d; color: #9cdcfe; padding: 6px 10px; text-align: left; border: 1px solid #3c3c3c; position: sticky; top: 0; z-index: 1; }
+        .csv-diff-table td { padding: 4px 8px; border: 1px solid #3c3c3c; vertical-align: top; font-family: monospace; white-space: pre-wrap; word-break: break-all; max-width: 400px; min-width: 100px; }
+        .csv-diff-table tr:hover td { background: #2a2d2e; }
+        .csv-diff-table td.cell-changed { background: rgba(50, 50, 50, 0.3); }
+        .csv-diff-table td.cell-same { background: #252526; color: #808080; }
+        .csv-diff-table .row-indicator { width: 40px; text-align: center; color: #808080; background: #2d2d2d; font-size: 12px; }
+        .csv-diff-table .diff-added { color: #4ec94e; background: rgba(40, 120, 40, 0.3); }
+        .csv-diff-table .diff-removed { color: #f48771; background: rgba(180, 50, 50, 0.3); text-decoration: line-through; }
+        .csv-diff-table .diff-equal { color: #808080; }
+        .csv-diff-footer { padding: 15px; border-top: 1px solid #3c3c3c; display: flex; gap: 10px; justify-content: flex-end; }
+        .csv-diff-footer button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .csv-diff-footer .btn-cancel { background: #3c3c3c; color: #d4d4d4; }
+        .csv-diff-footer .btn-confirm { background: #0e639c; color: #fff; }
     </style>
 </head>
 <body>
@@ -281,6 +302,20 @@
                         <div class="file-picker-list" id="file-picker-list"></div>
                         <div class="file-picker-footer">
                             <button onclick="closeFilePicker()">取消</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="csv-diff-overlay" class="csv-diff-overlay">
+                    <div class="csv-diff-modal">
+                        <div class="csv-diff-header">
+                            <span class="csv-diff-title">保存预览</span>
+                            <button class="csv-diff-close" onclick="closeCsvDiff()">×</button>
+                        </div>
+                        <div class="csv-diff-content" id="csv-diff-content"></div>
+                        <div class="csv-diff-footer">
+                            <button class="btn-cancel" onclick="closeCsvDiff()">取消</button>
+                            <button class="btn-confirm" onclick="confirmCsvSave()">确认保存</button>
                         </div>
                     </div>
                 </div>
@@ -907,6 +942,7 @@
         let csvData = [];
         let csvFileHandle = null;
         let csvHistory = [];
+        let csvOriginalData = null;
         const maxHistorySize = 50;
 
         function saveCsvHistory() {
@@ -937,11 +973,9 @@
                     const file = await handle.getFile();
                     csvFileHandle = { handle: handle, name: file.name, path: file.name };
                     
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        parseCSV(e.target.result);
-                    };
-                    reader.readAsText(file);
+                    const content = await file.text();
+                    parseCSV(content);
+                    csvOriginalData = JSON.parse(JSON.stringify(csvData));
                 } catch (e) {
                     if (e.name !== 'AbortError') {
                         console.error('打开文件失败:', e);
@@ -1040,6 +1074,7 @@
                     csvFileHandle = { path: filePath, name: filePath.split('/').pop() };
                     document.getElementById('csv-file-path').textContent = filePath;
                     parseCSV(result.content);
+                    csvOriginalData = JSON.parse(JSON.stringify(csvData));
                     closeFilePicker();
                 } catch (e) {
                     alert('读取文件失败: ' + e.message);
@@ -1074,18 +1109,16 @@
             }
         }
 
-        function loadCSVFile() {
+        async function loadCSVFile() {
             const fileInput = document.getElementById('csv-file-input');
             const file = fileInput.files[0];
             if (!file) return;
             
             csvFileHandle = { name: file.name, handle: null };
             
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                parseCSV(e.target.result);
-            };
-            reader.readAsText(file);
+            const content = await file.text();
+            parseCSV(content);
+            csvOriginalData = JSON.parse(JSON.stringify(csvData));
         }
 
         function parseCSV(text) {
@@ -1173,7 +1206,9 @@
                     td.dataset.row = i;
                     td.dataset.col = index;
                     td.addEventListener('blur', function() {
-                        let content = this.innerText || this.textContent;
+                        let content = this.innerHTML || '';
+                        content = content.replace(/<br\s*\/?>/gi, '\n').replace(/&nbsp;/g, ' ');
+                        content = content.replace(/<[^>]+>/g, '');
                         csvData[this.dataset.row][this.dataset.col] = content;
                     });
                     row.appendChild(td);
@@ -1226,6 +1261,8 @@
             ).join('\n');
         }
 
+        let pendingSaveContent = '';
+
         async function saveCSV() {
             const content = csvToString();
             if (!content) {
@@ -1238,16 +1275,186 @@
                 return;
             }
             
+            pendingSaveContent = content;
+            
+            try {
+                if (csvFileHandle.handle && window.showSaveFilePicker) {
+                    showCsvDiffPreview(csvOriginalData, csvData);
+                } else if (csvFileHandle.path) {
+                    showCsvDiffPreview(csvOriginalData, csvData);
+                } else {
+                    openCSVFilePicker(true);
+                }
+            } catch (e) {
+                alert('保存失败: ' + e.message);
+            }
+        }
+
+        function showCsvDiffPreview(origArray, modArray) {
+            const origRows = origArray || [];
+            const modRows = modArray || [];
+            const maxRow = Math.max(origRows.length, modRows.length);
+            const maxCol = Math.max(getMaxCol(origRows), getMaxCol(modRows));
+            
+            const container = document.getElementById('csv-diff-content');
+            let html = '<table class="csv-diff-table"><thead><tr><th class="row-indicator">行</th>';
+            
+            for (let i = 0; i < maxCol; i++) {
+                html += `<th>列${i + 1}</th>`;
+            }
+            html += '</tr></thead><tbody>';
+            
+            for (let r = 0; r < maxRow; r++) {
+                html += `<tr><td class="row-indicator">${r + 1}</td>`;
+                for (let c = 0; c < maxCol; c++) {
+                    const origCell = (origRows[r] && origRows[r][c]) || '';
+                    const modCell = (modRows[r] && modRows[r][c]) || '';
+                    
+                    if (origCell === modCell) {
+                        html += `<td class="cell-same">${escapeHtml(origCell)}</td>`;
+                    } else {
+                        html += `<td class="cell-changed">${computeCellDiff(origCell, modCell)}</td>`;
+                    }
+                }
+                html += '</tr>';
+            }
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+            
+            document.getElementById('csv-diff-overlay').classList.add('active');
+        }
+
+        function parseCSVRows(text) {
+            const rows = [];
+            const lines = text.split('\n');
+            lines.forEach(line => {
+                if (line.trim() === '' && rows.length > 0) return;
+                const cells = parseCSVLine(line);
+                rows.push(cells);
+            });
+            return rows;
+        }
+
+        function parseCSVLine(line) {
+            const cells = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (ch === '"') {
+                    if (inQuotes && line[i + 1] === '"') {
+                        current += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (ch === ',' && !inQuotes) {
+                    cells.push(current);
+                    current = '';
+                } else {
+                    current += ch;
+                }
+            }
+            cells.push(current);
+            return cells;
+        }
+
+        function getMaxCol(rows) {
+            let max = 0;
+            rows.forEach(row => { if (row.length > max) max = row.length; });
+            return max;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function computeCellDiff(orig, mod) {
+            orig = (orig || '').toString().replace(/\r/g, '');
+            mod = (mod || '').toString().replace(/\r/g, '');
+            
+            if (orig === mod) {
+                return escapeHtml(orig) || '&nbsp;';
+            }
+            
+            const origLines = orig.split('\n');
+            const modLines = mod.split('\n');
+            
+            const diff = computeDiff(origLines, modLines);
+            
+            if (diff.length === 0) {
+                return '&nbsp;';
+            }
+            
+            return diff.map(d => {
+                if (d.type === 0) {
+                    return ' ' + (escapeHtml(d.line) || '&nbsp;');
+                } else if (d.type === -1) {
+                    return '<span class="diff-removed">-' + (escapeHtml(d.line) || '&nbsp;') + '</span>';
+                } else {
+                    return '<span class="diff-added">+' + (escapeHtml(d.line) || '&nbsp;') + '</span>';
+                }
+            }).join('\n');
+        }
+
+        function computeDiff(a, b) {
+            const m = a.length;
+            const n = b.length;
+            
+            const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+            
+            for (let i = 1; i <= m; i++) {
+                for (let j = 1; j <= n; j++) {
+                    if (a[i - 1] === b[j - 1]) {
+                        dp[i][j] = dp[i - 1][j - 1] + 1;
+                    } else {
+                        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                    }
+                }
+            }
+            
+            let i = m, j = n;
+            const result = [];
+            
+            while (i > 0 || j > 0) {
+                if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+                    result.unshift({ type: 0, line: a[i - 1] });
+                    i--;
+                    j--;
+                } else if (i > 0 && (j === 0 || dp[i - 1][j] >= dp[i][j - 1])) {
+                    result.unshift({ type: -1, line: a[i - 1] });
+                    i--;
+                } else if (j > 0) {
+                    result.unshift({ type: 1, line: b[j - 1] });
+                    j--;
+                }
+            }
+            
+            return result;
+        }
+
+        function closeCsvDiff() {
+            document.getElementById('csv-diff-overlay').classList.remove('active');
+            pendingSaveContent = '';
+        }
+
+        async function confirmCsvSave() {
+            closeCsvDiff();
+            
             try {
                 if (csvFileHandle.handle && window.showSaveFilePicker) {
                     const writable = await csvFileHandle.handle.createWritable();
-                    await writable.write(content);
+                    await writable.write(pendingSaveContent);
                     await writable.close();
+                    csvOriginalData = JSON.parse(JSON.stringify(csvData));
                     alert('保存成功');
                 } else if (csvFileHandle.path) {
                     await saveCSVToPath(csvFileHandle.path);
-                } else {
-                    openCSVFilePicker(true);
+                    csvOriginalData = JSON.parse(JSON.stringify(csvData));
                 }
             } catch (e) {
                 alert('保存失败: ' + e.message);
@@ -1258,6 +1465,7 @@
             csvData = [];
             csvFileHandle = null;
             csvHistory = [];
+            csvOriginalData = null;
             document.getElementById('csv-file-input').value = '';
             document.getElementById('csv-file-path').textContent = '';
             renderCSVTable();
