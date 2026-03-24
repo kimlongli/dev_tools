@@ -100,6 +100,7 @@
         <div class="tool-item" data-tool="diff">文本比较器</div>
         <div class="tool-item" data-tool="url-encode">URL 编解码</div>
         <div class="tool-item" data-tool="unescape">字符串转义</div>
+        <div class="tool-item" data-tool="json-key-case">JSON Key 命名</div>
         <div class="tool-item" data-tool="csv">CSV 表格</div>
         <div class="tool-item" data-tool="base64">Base64 编解码</div>
         <div id="diy-tools-section" style="display: none;">
@@ -240,6 +241,23 @@
                         <button class="copy-btn" onclick="copyOutputToClipboard('unescape-output')">📋</button>
                     </div>
                 </div>
+                <div id="json-key-case" class="tool-panel">
+                    <div class="tool-title">JSON Key 命名</div>
+                    <button class="snapshot-btn" onclick="saveSnapshot('json-key-case')">💾 保存 Snapshot</button>
+                    <label>输入 JSON:</label>
+                    <div class="input-group">
+                        <textarea id="json-key-input" placeholder='{"snake_case_key": "value"}'></textarea>
+                        <button class="copy-btn" onclick="copyToClipboard('json-key-input')">📋</button>
+                    </div>
+                    <button onclick="convertJsonKeyToCamel()">下划线 → 驼峰</button>
+                    <button onclick="convertJsonKeyToSnake()">驼峰 → 下划线</button>
+                    <button onclick="clearJsonKey()">清空</button>
+                    <label>输出结果:</label>
+                    <div class="output-group">
+                        <div id="json-key-output" class="result"></div>
+                        <button class="copy-btn" onclick="copyOutputToClipboard('json-key-output')">📋</button>
+                    </div>
+                </div>
                 <div id="csv" class="tool-panel">
                     <div class="tool-title">CSV 表格</div>
                     <button onclick="openCSVFilePicker()">打开 CSV</button>
@@ -303,6 +321,7 @@
             diff: [],
             'url-encode': [],
             'unescape': [],
+            'json-key-case': [],
             'base64': []
         };
 
@@ -349,6 +368,8 @@
                 data = { input: document.getElementById('url-encode-input').value, output: document.getElementById('url-encode-output').innerHTML };
             } else if (tool === 'unescape') {
                 data = { input: document.getElementById('unescape-input').value, output: document.getElementById('unescape-output').innerHTML };
+            } else if (tool === 'json-key-case') {
+                data = { input: document.getElementById('json-key-input').value, output: document.getElementById('json-key-output').innerHTML };
             } else if (tool === 'base64') {
                 data = { input: document.getElementById('base64-input').value, output: document.getElementById('base64-output').innerHTML };
             } else if (tool.startsWith('diy-')) {
@@ -496,6 +517,8 @@
                 document.getElementById('url-encode-input').value = s.data.input || '';
             } else if (tool === 'unescape') {
                 document.getElementById('unescape-input').value = s.data.input || '';
+            } else if (tool === 'json-key-case') {
+                document.getElementById('json-key-input').value = s.data.input || '';
             } else if (tool === 'base64') {
                 document.getElementById('base64-input').value = s.data.input || '';
             } else if (tool.startsWith('diy-')) {
@@ -815,6 +838,69 @@
         function clearUnescape() {
             document.getElementById('unescape-input').value = '';
             document.getElementById('unescape-output').textContent = '';
+        }
+
+        function clearJsonKey() {
+            document.getElementById('json-key-input').value = '';
+            document.getElementById('json-key-output').innerHTML = '';
+        }
+
+        function convertJsonKeyToCamel() {
+            const input = document.getElementById('json-key-input').value.trim();
+            if (!input) {
+                alert('请输入 JSON');
+                return;
+            }
+            try {
+                const obj = JSON.parse(input);
+                const converted = convertKeysToCamel(obj);
+                document.getElementById('json-key-output').innerHTML = '<pre><code>' + highlightJSON(JSON.stringify(converted, null, 2)) + '</code></pre>';
+            } catch (e) {
+                document.getElementById('json-key-output').innerHTML = '<div class="result" style="color: #e06c75;">错误: ' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        function convertJsonKeyToSnake() {
+            const input = document.getElementById('json-key-input').value.trim();
+            if (!input) {
+                alert('请输入 JSON');
+                return;
+            }
+            try {
+                const obj = JSON.parse(input);
+                const converted = convertKeysToSnake(obj);
+                document.getElementById('json-key-output').innerHTML = '<pre><code>' + highlightJSON(JSON.stringify(converted, null, 2)) + '</code></pre>';
+            } catch (e) {
+                document.getElementById('json-key-output').innerHTML = '<div class="result" style="color: #e06c75;">错误: ' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        function convertKeysToCamel(obj) {
+            if (Array.isArray(obj)) {
+                return obj.map(item => convertKeysToCamel(item));
+            } else if (obj !== null && typeof obj === 'object') {
+                const result = {};
+                for (const key in obj) {
+                    const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+                    result[camelKey] = convertKeysToCamel(obj[key]);
+                }
+                return result;
+            }
+            return obj;
+        }
+
+        function convertKeysToSnake(obj) {
+            if (Array.isArray(obj)) {
+                return obj.map(item => convertKeysToSnake(item));
+            } else if (obj !== null && typeof obj === 'object') {
+                const result = {};
+                for (const key in obj) {
+                    const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+                    result[snakeKey] = convertKeysToSnake(obj[key]);
+                }
+                return result;
+            }
+            return obj;
         }
 
         // CSV 表格
