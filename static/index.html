@@ -795,24 +795,13 @@
         function doUnescape() {
             const input = document.getElementById('unescape-input').value;
             let result = input;
-            result = result.replace(/\\\\/g, '\\');
-            result = result.replace(/\\"/g, '"');
-            result = result.replace(/\\n/g, '\n');
-            result = result.replace(/\\t/g, '\t');
-            result = result.replace(/\\r/g, '\r');
-            result = result.replace(/\\'/g, "'");
+            result = result.replace(/\\(.)/g, '$1');
             document.getElementById('unescape-output').textContent = result;
         }
 
         function doEscape() {
             const input = document.getElementById('unescape-input').value;
-            let result = input;
-            result = result.replace(/\\/g, '\\\\');
-            result = result.replace(/"/g, '\\"');
-            result = result.replace(/\n/g, '\\n');
-            result = result.replace(/\t/g, '\\t');
-            result = result.replace(/\r/g, '\\r');
-            result = result.replace(/'/g, "\\'");
+            let result = input.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\t/g, '\\t').replace(/\r/g, '\\r');
             document.getElementById('unescape-output').textContent = result;
         }
 
