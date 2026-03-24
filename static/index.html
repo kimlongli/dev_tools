@@ -246,6 +246,7 @@
                     <input type="file" id="csv-file-input" accept=".csv" onchange="loadCSVFile()" style="position:absolute;opacity:0;z-index:-1;">
                     <button onclick="saveCSV()">保存 CSV</button>
                     <button onclick="undoCsv()">撤销</button>
+                    <div id="csv-file-path" class="csv-file-path" style="margin: 10px 0; font-size: 12px; color: #9cdcfe; word-break: break-all;"></div>
                     <div class="csv-table-container">
                         <table id="csv-table" class="csv-table"></table>
                     </div>
@@ -949,6 +950,7 @@
                         return;
                     }
                     csvFileHandle = { path: filePath, name: filePath.split('/').pop() };
+                    document.getElementById('csv-file-path').textContent = filePath;
                     parseCSV(result.content);
                     closeFilePicker();
                 } catch (e) {
@@ -1169,6 +1171,7 @@
             csvFileHandle = null;
             csvHistory = [];
             document.getElementById('csv-file-input').value = '';
+            document.getElementById('csv-file-path').textContent = '';
             renderCSVTable();
         }
 
