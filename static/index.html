@@ -958,13 +958,15 @@
 
         async function openCSVFilePicker(saveMode = false) {
             isSelectingForSave = saveMode;
-            currentPickerPath = lastOpenedPath || '/Users/' + (await getUsername());
+            if (lastOpenedPath) {
+                currentPickerPath = lastOpenedPath;
+            } else {
+                const response = await fetch('/api/home-dir');
+                const result = await response.json();
+                currentPickerPath = result.home || '/';
+            }
             await loadFilePicker(currentPickerPath);
             document.getElementById('file-picker-overlay').classList.add('active');
-        }
-
-        async function getUsername() {
-            return 'jinlongli';
         }
 
         async function loadFilePicker(path) {

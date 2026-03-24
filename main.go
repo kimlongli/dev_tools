@@ -148,6 +148,7 @@ func main() {
 	mux.HandleFunc("/api/save-file", handleSaveFile)
 	mux.HandleFunc("/api/read-file", handleReadFile)
 	mux.HandleFunc("/api/list-dir", handleListDir)
+	mux.HandleFunc("/api/home-dir", handleHomeDir)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -344,4 +345,14 @@ func handleListDir(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(result)
+}
+
+func handleHomeDir(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"home": home})
 }
