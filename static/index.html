@@ -98,9 +98,11 @@
         .csv-diff-content { flex: 1; overflow-y: auto; padding: 15px; max-height: 60vh; white-space: pre-wrap; word-break: break-all; }
         .csv-diff-table { border-collapse: collapse; width: 100%; font-size: 13px; }
         .csv-diff-table th { background: #2d2d2d; color: #9cdcfe; padding: 6px 10px; text-align: left; border: 1px solid #3c3c3c; position: sticky; top: 0; z-index: 1; }
+        .csv-diff-table th.th-changed { background: rgba(50, 50, 50, 0.3); color: #d4d4d4; }
         .csv-diff-table td { padding: 4px 8px; border: 1px solid #3c3c3c; vertical-align: top; font-family: monospace; white-space: pre-wrap; word-break: break-all; max-width: 400px; min-width: 100px; }
         .csv-diff-table tr:hover td { background: #2a2d2e; }
         .csv-diff-table td.cell-changed { background: rgba(50, 50, 50, 0.3); }
+        .csv-diff-table td.cell-header-changed { background: rgba(200, 150, 50, 0.2); }
         .csv-diff-table td.cell-same { background: #252526; color: #808080; }
         .csv-diff-table .row-indicator { width: 40px; text-align: center; color: #808080; background: #2d2d2d; font-size: 12px; }
         .csv-diff-table .diff-added { color: #4ec94e; background: rgba(40, 120, 40, 0.3); }
@@ -1300,11 +1302,18 @@
             let html = '<table class="csv-diff-table"><thead><tr><th class="row-indicator">行</th>';
             
             for (let i = 0; i < maxCol; i++) {
-                html += `<th>列${i + 1}</th>`;
+                const origHeader = (origRows[0] && origRows[0][i]) || '';
+                const modHeader = (modRows[0] && modRows[0][i]) || '';
+                if (origHeader === modHeader) {
+                    html += `<th>${escapeHtml(origHeader)}</th>`;
+                } else {
+                    html += `<th class="th-changed">${computeCellDiff(origHeader, modHeader)}</th>`;
+                }
             }
             html += '</tr></thead><tbody>';
             
             for (let r = 0; r < maxRow; r++) {
+                const isHeaderRow = r === 0;
                 html += `<tr><td class="row-indicator">${r + 1}</td>`;
                 for (let c = 0; c < maxCol; c++) {
                     const origCell = (origRows[r] && origRows[r][c]) || '';
@@ -1313,7 +1322,11 @@
                     if (origCell === modCell) {
                         html += `<td class="cell-same">${escapeHtml(origCell)}</td>`;
                     } else {
-                        html += `<td class="cell-changed">${computeCellDiff(origCell, modCell)}</td>`;
+                        if (isHeaderRow) {
+                            html += `<td class="cell-header-changed">${computeCellDiff(origCell, modCell)}</td>`;
+                        } else {
+                            html += `<td class="cell-changed">${computeCellDiff(origCell, modCell)}</td>`;
+                        }
                     }
                 }
                 html += '</tr>';
