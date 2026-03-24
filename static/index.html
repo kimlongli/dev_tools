@@ -1480,6 +1480,17 @@
             });
         }
 
+        // Tab 键缩进支持
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab' && e.target.tagName === 'TEXTAREA') {
+                e.preventDefault();
+                const start = e.target.selectionStart;
+                const end = e.target.selectionEnd;
+                e.target.value = e.target.value.substring(0, start) + '    ' + e.target.value.substring(end);
+                e.target.selectionStart = e.target.selectionEnd = start + 4;
+            }
+        });
+
         // 初始化
         loadSnapshots();
         
