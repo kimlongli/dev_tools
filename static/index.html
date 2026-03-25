@@ -99,11 +99,15 @@
         .csv-diff-table { border-collapse: collapse; width: 100%; font-size: 13px; }
         .csv-diff-table th { background: #2d2d2d; color: #9cdcfe; padding: 6px 10px; text-align: left; border: 1px solid #3c3c3c; position: sticky; top: 0; z-index: 1; }
         .csv-diff-table th.th-changed { background: rgba(50, 50, 50, 0.3); color: #d4d4d4; }
+        .csv-diff-table th.th-removed { background: rgba(180, 50, 50, 0.4); color: #f48771; }
+        .csv-diff-table th.th-added { background: rgba(40, 120, 40, 0.4); color: #4ec94e; }
         .csv-diff-table td { padding: 4px 8px; border: 1px solid #3c3c3c; vertical-align: top; font-family: monospace; white-space: pre-wrap; word-break: break-all; max-width: 400px; min-width: 100px; }
         .csv-diff-table tr:hover td { background: #2a2d2e; }
         .csv-diff-table td.cell-changed { background: rgba(50, 50, 50, 0.3); }
         .csv-diff-table td.cell-header-changed { background: rgba(200, 150, 50, 0.2); }
         .csv-diff-table td.cell-same { background: #252526; color: #808080; }
+        .csv-diff-table td.cell-removed { background: rgba(180, 50, 50, 0.3); color: #f48771; text-decoration: line-through; }
+        .csv-diff-table td.cell-added { background: rgba(40, 120, 40, 0.3); color: #4ec94e; }
         .csv-diff-table .row-indicator { width: 40px; text-align: center; color: #808080; background: #2d2d2d; font-size: 12px; }
         .csv-diff-table .diff-added { color: #4ec94e; background: rgba(40, 120, 40, 0.3); }
         .csv-diff-table .diff-removed { color: #f48771; background: rgba(180, 50, 50, 0.3); text-decoration: line-through; }
@@ -1209,8 +1213,14 @@
                     td.dataset.col = index;
                     td.addEventListener('blur', function() {
                         let content = this.innerHTML || '';
-                        content = content.replace(/<br\s*\/?>/gi, '\n').replace(/&nbsp;/g, ' ');
+                        content = content.replace(/<br\s*\/?>/gi, '\n');
+                        content = content.replace(/<\/p>/gi, '\n');
+                        content = content.replace(/<div>/gi, '\n');
+                        content = content.replace(/<\/div>/gi, '');
+                        content = content.replace(/<p[^>]*>/gi, '');
+                        content = content.replace(/&nbsp;/g, ' ');
                         content = content.replace(/<[^>]+>/g, '');
+                        content = content.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
                         csvData[this.dataset.row][this.dataset.col] = content;
                     });
                     row.appendChild(td);
@@ -1295,31 +1305,52 @@
         function showCsvDiffPreview(origArray, modArray) {
             const origRows = origArray || [];
             const modRows = modArray || [];
-            const maxRow = Math.max(origRows.length, modRows.length);
-            const maxCol = Math.max(getMaxCol(origRows), getMaxCol(modRows));
+            
+            const origHeaders = origRows[0] || [];
+            const modHeaders = modRows[0] || [];
+            
+            const colMap = matchColumns(origHeaders, modHeaders);
             
             const container = document.getElementById('csv-diff-content');
             let html = '<table class="csv-diff-table"><thead><tr><th class="row-indicator">行</th>';
             
-            for (let i = 0; i < maxCol; i++) {
-                const origHeader = (origRows[0] && origRows[0][i]) || '';
-                const modHeader = (modRows[0] && modRows[0][i]) || '';
-                if (origHeader === modHeader) {
-                    html += `<th>${escapeHtml(origHeader)}</th>`;
+            for (let c = 0; c < colMap.length; c++) {
+                const mapping = colMap[c];
+                if (mapping.status === 'removed') {
+                    html += `<th class="th-removed">${escapeHtml(origHeaders[mapping.origIndex])}</th>`;
+                } else if (mapping.status === 'added') {
+                    html += `<th class="th-added">${escapeHtml(modHeaders[mapping.modIndex])}</th>`;
+                } else if (mapping.status === 'changed') {
+                    html += `<th class="th-changed">${computeCellDiff(origHeaders[mapping.origIndex], modHeaders[mapping.modIndex])}</th>`;
                 } else {
-                    html += `<th class="th-changed">${computeCellDiff(origHeader, modHeader)}</th>`;
+                    html += `<th>${escapeHtml(modHeaders[mapping.modIndex])}</th>`;
                 }
             }
             html += '</tr></thead><tbody>';
             
+            const maxRow = Math.max(origRows.length, modRows.length);
             for (let r = 1; r < maxRow; r++) {
                 html += `<tr><td class="row-indicator">${r}</td>`;
-                for (let c = 0; c < maxCol; c++) {
-                    const origCell = (origRows[r] && origRows[r][c]) || '';
-                    const modCell = (modRows[r] && modRows[r][c]) || '';
+                for (let c = 0; c < colMap.length; c++) {
+                    const mapping = colMap[c];
+                    let origCell = '';
+                    let modCell = '';
+                    
+                    if (mapping.status === 'removed') {
+                        origCell = (origRows[r] && origRows[r][mapping.origIndex]) || '';
+                        modCell = '';
+                    } else if (mapping.status === 'added') {
+                        origCell = '';
+                        modCell = (modRows[r] && modRows[r][mapping.modIndex]) || '';
+                    } else {
+                        origCell = (origRows[r] && origRows[r][mapping.origIndex]) || '';
+                        modCell = (modRows[r] && modRows[r][mapping.modIndex]) || '';
+                    }
                     
                     if (origCell === modCell) {
                         html += `<td class="cell-same">${escapeHtml(origCell)}</td>`;
+                    } else if (mapping.status === 'removed' || mapping.status === 'added') {
+                        html += `<td class="cell-${mapping.status}">${escapeHtml(origCell || modCell)}</td>`;
                     } else {
                         html += `<td class="cell-changed">${computeCellDiff(origCell, modCell)}</td>`;
                     }
@@ -1331,6 +1362,55 @@
             container.innerHTML = html;
             
             document.getElementById('csv-diff-overlay').classList.add('active');
+        }
+        
+        function matchColumns(origHeaders, modHeaders) {
+            const origLen = origHeaders.length;
+            const modLen = modHeaders.length;
+            
+            const origMatched = new Array(origLen).fill(false);
+            const modMatched = new Array(modLen).fill(false);
+            
+            for (let i = 0; i < origLen; i++) {
+                for (let j = 0; j < modLen; j++) {
+                    if (!origMatched[i] && !modMatched[j] && origHeaders[i] === modHeaders[j]) {
+                        origMatched[i] = true;
+                        modMatched[j] = true;
+                    }
+                }
+            }
+            
+            const result = [];
+            let origIdx = 0;
+            let modIdx = 0;
+            
+            while (origIdx < origLen || modIdx < modLen) {
+                if (origIdx < origLen && origMatched[origIdx] && modIdx < modLen && modMatched[modIdx] && origHeaders[origIdx] === modHeaders[modIdx]) {
+                    result.push({ origIndex: origIdx, modIndex: modIdx, status: 'same' });
+                    origIdx++;
+                    modIdx++;
+                } else if (origIdx < origLen && !origMatched[origIdx]) {
+                    result.push({ origIndex: origIdx, modIndex: -1, status: 'removed' });
+                    origIdx++;
+                } else if (modIdx < modLen && !modMatched[modIdx]) {
+                    result.push({ origIndex: -1, modIndex: modIdx, status: 'added' });
+                    modIdx++;
+                } else {
+                    if (origIdx < origLen && modIdx < modLen) {
+                        result.push({ origIndex: origIdx, modIndex: modIdx, status: 'changed' });
+                        origIdx++;
+                        modIdx++;
+                    } else if (origIdx < origLen) {
+                        result.push({ origIndex: origIdx, modIndex: -1, status: 'removed' });
+                        origIdx++;
+                    } else if (modIdx < modLen) {
+                        result.push({ origIndex: -1, modIndex: modIdx, status: 'added' });
+                        modIdx++;
+                    }
+                }
+            }
+            
+            return result;
         }
 
         function parseCSVRows(text) {
