@@ -136,6 +136,34 @@ type ListDirRequest struct {
 	Path string `json:"path"`
 }
 
+type CsvDiffRequest struct {
+	OldContent string `json:"old_content"`
+	NewContent string `json:"new_content"`
+}
+
+type CellDiff struct {
+	Type int    `json:"type"`
+	Line string `json:"line"`
+}
+
+type RowDiff struct {
+	OrigIndex int        `json:"orig_index"`
+	NewIndex  int        `json:"new_index"`
+	Status    string     `json:"status"`
+	Cells     []CellDiff `json:"cells,omitempty"`
+}
+
+type ColumnMapping struct {
+	OrigIndex int    `json:"orig_index"`
+	NewIndex  int    `json:"new_index"`
+	Status    string `json:"status"`
+}
+
+type CsvDiffResponse struct {
+	Columns []ColumnMapping `json:"columns"`
+	Rows    []RowDiff       `json:"rows"`
+}
+
 func main() {
 	loadSnapshots()
 	loadDiyTools()
@@ -149,6 +177,7 @@ func main() {
 	mux.HandleFunc("/api/read-file", handleReadFile)
 	mux.HandleFunc("/api/list-dir", handleListDir)
 	mux.HandleFunc("/api/home-dir", handleHomeDir)
+	mux.HandleFunc("/api/csv-diff", handleCsvDiff)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -355,4 +384,290 @@ func handleHomeDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"home": home})
+}
+
+func handleCsvDiff(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req CsvDiffRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	origRows := parseCSVRows(req.OldContent)
+	modRows := parseCSVRows(req.NewContent)
+
+	origHeaders := []string{}
+	modHeaders := []string{}
+	if len(origRows) > 0 {
+		origHeaders = origRows[0]
+	}
+	if len(modRows) > 0 {
+		modHeaders = modRows[0]
+	}
+
+	columns := matchColumnsLCS(origHeaders, modHeaders)
+
+	var rows []RowDiff
+	if len(origRows) > 0 && len(modRows) > 0 {
+		origDataRows := origRows[1:]
+		modDataRows := modRows[1:]
+		rows = matchRowsLCS(origDataRows, modDataRows, columns)
+	}
+
+	json.NewEncoder(w).Encode(CsvDiffResponse{
+		Columns: columns,
+		Rows:    rows,
+	})
+}
+
+func parseCSVRows(text string) [][]string {
+	rows := [][]string{}
+	currentRow := []string{}
+	currentCell := ""
+	inQuotes := false
+
+	for i := 0; i < len(text); i++ {
+		ch := text[i]
+
+		if ch == '"' {
+			if inQuotes && i+1 < len(text) && text[i+1] == '"' {
+				currentCell += "\""
+				i++
+			} else {
+				inQuotes = !inQuotes
+			}
+		} else if ch == ',' && !inQuotes {
+			currentRow = append(currentRow, currentCell)
+			currentCell = ""
+		} else if (ch == '\n' || ch == '\r') && !inQuotes {
+			currentRow = append(currentRow, currentCell)
+			rows = append(rows, currentRow)
+			currentRow = []string{}
+			currentCell = ""
+			if ch == '\r' && i+1 < len(text) && text[i+1] == '\n' {
+				i++
+			}
+		} else {
+			currentCell += string(ch)
+		}
+	}
+	if currentCell != "" || len(currentRow) > 0 {
+		currentRow = append(currentRow, currentCell)
+		rows = append(rows, currentRow)
+	}
+
+	return rows
+}
+
+func matchColumnsLCS(orig, mod []string) []ColumnMapping {
+	m, n := len(orig), len(mod)
+	dp := make([][]int, m+1)
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+	}
+
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			if orig[i-1] == mod[j-1] {
+				dp[i][j] = dp[i-1][j-1] + 1
+			} else {
+				if dp[i-1][j] > dp[i][j-1] {
+					dp[i][j] = dp[i-1][j]
+				} else {
+					dp[i][j] = dp[i][j-1]
+				}
+			}
+		}
+	}
+
+	result := []ColumnMapping{}
+	i, j := m, n
+	for i > 0 || j > 0 {
+		if i > 0 && j > 0 && orig[i-1] == mod[j-1] {
+			result = append([]ColumnMapping{{OrigIndex: i - 1, NewIndex: j - 1, Status: "same"}}, result...)
+			i--
+			j--
+		} else if i > 0 && (j == 0 || dp[i-1][j] >= dp[i][j-1]) {
+			result = append([]ColumnMapping{{OrigIndex: i - 1, NewIndex: -1, Status: "removed"}}, result...)
+			i--
+		} else if j > 0 {
+			result = append([]ColumnMapping{{OrigIndex: -1, NewIndex: j - 1, Status: "added"}}, result...)
+			j--
+		}
+	}
+
+	return result
+}
+
+func matchRowsLCS(orig, mod [][]string, columns []ColumnMapping) []RowDiff {
+	m, n := len(orig), len(mod)
+
+	cellScore := make([][]int, m+1)
+	for i := range cellScore {
+		cellScore[i] = make([]int, n+1)
+	}
+
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			lcsLen := rowLCSLen(orig[i-1], mod[j-1])
+			if rowsEqual(orig[i-1], mod[j-1]) {
+				cellScore[i][j] = cellScore[i-1][j-1] + len(orig[i-1])
+			} else if lcsLen > 0 {
+				cellScore[i][j] = cellScore[i-1][j-1] + lcsLen
+			} else {
+				cellScore[i][j] = cellScore[i-1][j-1]
+			}
+		}
+	}
+
+	result := []RowDiff{}
+	i, j := m, n
+	for i > 0 || j > 0 {
+		if i > 0 && j > 0 && rowsEqualBySameColumns(orig[i-1], mod[j-1], columns) {
+			result = append([]RowDiff{{OrigIndex: i - 1, NewIndex: j - 1, Status: "same"}}, result...)
+			i--
+			j--
+		} else if i > 0 && j > 0 && cellScore[i][j] > 0 {
+			result = append([]RowDiff{{OrigIndex: i - 1, NewIndex: j - 1, Status: "changed"}}, result...)
+			i--
+			j--
+		} else if i > 0 && (j == 0 || cellScore[i-1][j] >= cellScore[i][j-1]) {
+			result = append([]RowDiff{{OrigIndex: i - 1, NewIndex: -1, Status: "removed"}}, result...)
+			i--
+		} else if j > 0 {
+			result = append([]RowDiff{{OrigIndex: -1, NewIndex: j - 1, Status: "added"}}, result...)
+			j--
+		}
+	}
+
+	for idx := range result {
+		r := &result[idx]
+		if r.Status == "same" {
+			r.Cells = []CellDiff{}
+		} else if r.Status == "changed" {
+			if r.OrigIndex >= 0 && r.NewIndex >= 0 {
+				r.Cells = computeRowCellDiff(orig[r.OrigIndex], mod[r.NewIndex], columns)
+			}
+		}
+	}
+
+	return result
+}
+
+func rowsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func rowsEqualBySameColumns(a, b []string, columns []ColumnMapping) bool {
+	sameCols := []struct{ origIdx, modIdx int }{}
+	for _, col := range columns {
+		if col.Status == "same" {
+			sameCols = append(sameCols, struct{ origIdx, modIdx int }{col.OrigIndex, col.NewIndex})
+		}
+	}
+
+	for _, col := range sameCols {
+		origVal := ""
+		modVal := ""
+		if col.origIdx >= 0 && col.origIdx < len(a) {
+			origVal = a[col.origIdx]
+		}
+		if col.modIdx >= 0 && col.modIdx < len(b) {
+			modVal = b[col.modIdx]
+		}
+		if origVal != modVal {
+			return false
+		}
+	}
+	return true
+}
+
+func rowLCSLen(a, b []string) int {
+	m, n := len(a), len(b)
+	dp := make([][]int, m+1)
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+	}
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			if a[i-1] == b[j-1] {
+				dp[i][j] = dp[i-1][j-1] + 1
+			} else {
+				if dp[i-1][j] > dp[i][j-1] {
+					dp[i][j] = dp[i-1][j]
+				} else {
+					dp[i][j] = dp[i][j-1]
+				}
+			}
+		}
+	}
+	return dp[m][n]
+}
+
+func computeRowCellDiff(origRow, modRow []string, columns []ColumnMapping) []CellDiff {
+	sameCols := []struct{ origIdx, modIdx int }{}
+	removedCols := []int{}
+	addedCols := []int{}
+
+	for _, col := range columns {
+		if col.Status == "removed" {
+			removedCols = append(removedCols, col.OrigIndex)
+		} else if col.Status == "added" {
+			addedCols = append(addedCols, col.NewIndex)
+		} else {
+			sameCols = append(sameCols, struct{ origIdx, modIdx int }{col.OrigIndex, col.NewIndex})
+		}
+	}
+
+	result := []CellDiff{}
+
+	for _, col := range sameCols {
+		origVal := ""
+		modVal := ""
+		if col.origIdx >= 0 && col.origIdx < len(origRow) {
+			origVal = origRow[col.origIdx]
+		}
+		if col.modIdx >= 0 && col.modIdx < len(modRow) {
+			modVal = modRow[col.modIdx]
+		}
+		if origVal == modVal {
+			result = append(result, CellDiff{Type: 0, Line: origVal})
+		} else {
+			result = append(result, CellDiff{Type: 1, Line: modVal})
+			result = append(result, CellDiff{Type: -1, Line: origVal})
+		}
+	}
+
+	for _, idx := range removedCols {
+		origVal := ""
+		if idx >= 0 && idx < len(origRow) {
+			origVal = origRow[idx]
+		}
+		result = append(result, CellDiff{Type: -1, Line: origVal})
+	}
+
+	for _, idx := range addedCols {
+		modVal := ""
+		if idx >= 0 && idx < len(modRow) {
+			modVal = modRow[idx]
+		}
+		result = append(result, CellDiff{Type: 1, Line: modVal})
+	}
+
+	return result
 }
