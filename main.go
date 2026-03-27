@@ -516,13 +516,17 @@ func matchRowsLCS(orig, mod [][]string, columns []ColumnMapping) []RowDiff {
 
 	for i := 1; i <= m; i++ {
 		for j := 1; j <= n; j++ {
-			lcsLen := rowLCSLen(orig[i-1], mod[j-1])
 			if rowsEqual(orig[i-1], mod[j-1]) {
 				cellScore[i][j] = cellScore[i-1][j-1] + len(orig[i-1])
-			} else if lcsLen > 0 {
-				cellScore[i][j] = cellScore[i-1][j-1] + lcsLen
 			} else {
-				cellScore[i][j] = cellScore[i-1][j-1]
+				matchCount := countMatchingColumns(orig[i-1], mod[j-1], columns)
+				if matchCount > 0 {
+					cellScore[i][j] = cellScore[i-1][j-1] + matchCount
+				} else if cellScore[i-1][j] > cellScore[i][j-1] {
+					cellScore[i][j] = cellScore[i-1][j]
+				} else {
+					cellScore[i][j] = cellScore[i][j-1]
+				}
 			}
 		}
 	}
@@ -530,11 +534,19 @@ func matchRowsLCS(orig, mod [][]string, columns []ColumnMapping) []RowDiff {
 	result := []RowDiff{}
 	i, j := m, n
 	for i > 0 || j > 0 {
-		if i > 0 && j > 0 && rowsEqualBySameColumns(orig[i-1], mod[j-1], columns) {
+		if i > 0 && j > 0 && i-1 == j-1 && rowsEqualBySameColumns(orig[i-1], mod[j-1], columns) {
+			if rowsEqual(orig[i-1], mod[j-1]) {
+				result = append([]RowDiff{{OrigIndex: i - 1, NewIndex: j - 1, Status: "same"}}, result...)
+			} else {
+				result = append([]RowDiff{{OrigIndex: i - 1, NewIndex: j - 1, Status: "changed"}}, result...)
+			}
+			i--
+			j--
+		} else if i > 0 && j > 0 && rowsEqual(orig[i-1], mod[j-1]) {
 			result = append([]RowDiff{{OrigIndex: i - 1, NewIndex: j - 1, Status: "same"}}, result...)
 			i--
 			j--
-		} else if i > 0 && j > 0 && cellScore[i][j] > 0 {
+		} else if i > 0 && j > 0 && rowsEqualBySameColumns(orig[i-1], mod[j-1], columns) {
 			result = append([]RowDiff{{OrigIndex: i - 1, NewIndex: j - 1, Status: "changed"}}, result...)
 			i--
 			j--
@@ -581,6 +593,11 @@ func rowsEqualBySameColumns(a, b []string, columns []ColumnMapping) bool {
 		}
 	}
 
+	if len(sameCols) == 0 {
+		return false
+	}
+
+	matchCount := 0
 	for _, col := range sameCols {
 		origVal := ""
 		modVal := ""
@@ -590,11 +607,31 @@ func rowsEqualBySameColumns(a, b []string, columns []ColumnMapping) bool {
 		if col.modIdx >= 0 && col.modIdx < len(b) {
 			modVal = b[col.modIdx]
 		}
-		if origVal != modVal {
-			return false
+		if origVal == modVal {
+			matchCount++
 		}
 	}
-	return true
+	return matchCount >= 1
+}
+
+func countMatchingColumns(a, b []string, columns []ColumnMapping) int {
+	count := 0
+	for _, col := range columns {
+		if col.Status == "same" {
+			origVal := ""
+			modVal := ""
+			if col.OrigIndex >= 0 && col.OrigIndex < len(a) {
+				origVal = a[col.OrigIndex]
+			}
+			if col.NewIndex >= 0 && col.NewIndex < len(b) {
+				modVal = b[col.NewIndex]
+			}
+			if origVal == modVal {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func rowLCSLen(a, b []string) int {
