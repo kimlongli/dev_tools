@@ -68,8 +68,10 @@
         .csv-table th, .csv-table td { border: 1px solid #3c3c3c; padding: 8px 12px; text-align: left; white-space: pre-wrap; }
         .csv-table th { background: #2d2d2d; color: #9cdcfe; }
         .csv-table td { background: #252526; vertical-align: top; }
-        .csv-table td:focus { outline: 2px solid #007acc; outline-offset: -2px; }
+        .csv-table td:focus-within { outline: 2px solid #007acc; outline-offset: -2px; }
         .csv-table tr:hover td { background: #2a2d2e; }
+        .csv-table td textarea { background: transparent; border: none; color: inherit; font: inherit; padding: 0; margin: 0; width: 100%; resize: none; outline: none; box-sizing: border-box; display: block; line-height: 1.4; height: auto; }
+        .csv-table td textarea:focus { outline: none; }
         .csv-table th[contenteditable], .csv-table td[contenteditable] { -moz-appearance: textfield; }
         .csv-context-menu { position: absolute; background: #252526; border: 1px solid #3c3c3c; box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 1000; min-width: 150px; }
         .csv-context-menu-item { padding: 8px 15px; cursor: pointer; font-size: 13px; color: #d4d4d4; }
@@ -1207,27 +1209,29 @@
                 });
                 csvData[i].forEach((cell, index) => {
                     const td = document.createElement('td');
-                    td.contentEditable = true;
-                    td.innerText = cell;
-                    td.dataset.row = i;
-                    td.dataset.col = index;
-                    td.addEventListener('blur', function() {
-                        let content = this.innerHTML || '';
-                        content = content.replace(/<br\s*\/?>/gi, '\n');
-                        content = content.replace(/<\/p>/gi, '\n');
-                        content = content.replace(/<div>/gi, '\n');
-                        content = content.replace(/<\/div>/gi, '');
-                        content = content.replace(/<p[^>]*>/gi, '');
-                        content = content.replace(/&nbsp;/g, ' ');
-                        content = content.replace(/<[^>]+>/g, '');
-                        content = content.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-                        csvData[this.dataset.row][this.dataset.col] = content;
+                    const textarea = document.createElement('textarea');
+                    textarea.value = cell;
+                    textarea.dataset.row = i;
+                    textarea.dataset.col = index;
+                    textarea.addEventListener('input', function() {
+                        this.style.height = '1px';
+                        this.style.height = this.scrollHeight + 'px';
+                        csvData[this.dataset.row][this.dataset.col] = this.value;
                     });
+                    textarea.addEventListener('change', function() {
+                        csvData[this.dataset.row][this.dataset.col] = this.value;
+                    });
+                    td.appendChild(textarea);
                     row.appendChild(td);
                 });
                 tbody.appendChild(row);
             }
             table.appendChild(tbody);
+            table.querySelectorAll('td textarea').forEach(ta => {
+                ta.style.height = '1px';
+                void ta.offsetHeight;
+                ta.style.height = ta.scrollHeight + 'px';
+            });
         }
         
         function showCsvContextMenu(x, y, type, index) {
