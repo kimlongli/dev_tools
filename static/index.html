@@ -1192,7 +1192,7 @@
                 });
                 th.addEventListener('contextmenu', function(e) {
                     e.preventDefault();
-                    showCsvContextMenu(e.clientX, e.clientY, 'column', index);
+                    showCsvContextMenu(e.clientX, e.clientY, 'header', index);
                 });
                 headerRow.appendChild(th);
             });
@@ -1251,6 +1251,13 @@
                     <div class="csv-context-menu-item" onclick="addCsvColumnAfter(${index})">在此列之后添加列</div>
                     <div class="csv-context-menu-divider"></div>
                     <div class="csv-context-menu-item" onclick="deleteCsvColumnByIndex(${index})">删除此列</div>
+                `;
+            } else if (type === 'header') {
+                menu.innerHTML = `
+                    <div class="csv-context-menu-item" onclick="addCsvRowAfterHeader()">在表头后添加行</div>
+                    <div class="csv-context-menu-divider"></div>
+                    <div class="csv-context-menu-item" onclick="addCsvColumnBefore(${index})">在此列之前添加列</div>
+                    <div class="csv-context-menu-item" onclick="addCsvColumnAfter(${index})">在此列之后添加列</div>
                 `;
             }
             
@@ -1545,6 +1552,15 @@
             const colCount = csvData[0].length;
             const newRow = new Array(colCount).fill('');
             csvData.splice(index + 1, 0, newRow);
+            renderCSVTable();
+        }
+
+        function addCsvRowAfterHeader() {
+            hideCsvContextMenu();
+            saveCsvHistory();
+            const colCount = csvData[0].length;
+            const newRow = new Array(colCount).fill('');
+            csvData.splice(1, 0, newRow);
             renderCSVTable();
         }
 
