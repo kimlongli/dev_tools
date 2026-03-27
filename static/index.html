@@ -73,6 +73,10 @@
         .csv-table td textarea { background: transparent; border: none; color: inherit; font: inherit; padding: 0; margin: 0; width: 100%; resize: none; outline: none; box-sizing: border-box; display: block; line-height: 1.4; height: auto; }
         .csv-table td textarea:focus { outline: none; }
         .csv-table th[contenteditable], .csv-table td[contenteditable] { -moz-appearance: textfield; }
+        .csv-table .spacer-row td { background: transparent; padding: 0; border: none; }
+        .csv-table-container { overflow: auto; max-height: 500px; margin-top: 15px; border: 1px solid #3c3c3c; position: relative; }
+        .csv-table thead { position: sticky; top: 0; z-index: 10; }
+        .csv-table .row-indicator { width: 50px; min-width: 50px; text-align: center; color: #808080; background: #2d2d2d !important; user-select: none; }
         .csv-context-menu { position: absolute; background: #252526; border: 1px solid #3c3c3c; box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 1000; min-width: 150px; }
         .csv-context-menu-item { padding: 8px 15px; cursor: pointer; font-size: 13px; color: #d4d4d4; }
         .csv-context-menu-item:hover { background: #094771; }
@@ -951,6 +955,7 @@
         let csvFileHandle = null;
         let csvHistory = [];
         let csvOriginalData = null;
+        let csvVirtualScroll = null;
         const maxHistorySize = 50;
 
         function saveCsvHistory() {
@@ -1175,12 +1180,33 @@
 
         function renderCSVTable() {
             const table = document.getElementById('csv-table');
+            const container = table.closest('.csv-table-container');
             table.innerHTML = '';
             
             if (csvData.length === 0) return;
 
+            const savedScrollTop = csvVirtualScroll ? csvVirtualScroll.scrollTop : 0;
+
+            csvVirtualScroll = {
+                scrollTop: savedScrollTop,
+                rowHeight: 28,
+                visibleRows: Math.ceil(500 / 28) + 10,
+                bufferRows: 5,
+                startIndex: 1,
+                endIndex: 1,
+                rowHeights: new Map(),
+                totalHeight: 0,
+                container: container
+            };
+
+            csvVirtualScroll.totalHeight = calculateTotalHeight();
+            
             const thead = document.createElement('thead');
             const headerRow = document.createElement('tr');
+            const rowIndicatorHeader = document.createElement('th');
+            rowIndicatorHeader.className = 'row-indicator';
+            rowIndicatorHeader.textContent = '#';
+            headerRow.appendChild(rowIndicatorHeader);
             csvData[0].forEach((cell, index) => {
                 const th = document.createElement('th');
                 th.contentEditable = true;
@@ -1200,37 +1226,189 @@
             table.appendChild(thead);
 
             const tbody = document.createElement('tbody');
+            tbody.id = 'csv-tbody';
+            table.appendChild(tbody);
+
+            renderVisibleRows();
+            
+            container.scrollTop = savedScrollTop;
+            
+            setTimeout(() => {
+                csvVirtualScroll.scrollTop = container.scrollTop;
+                renderVisibleRows();
+            }, 0);
+
+            container.addEventListener('scroll', handleScroll);
+        }
+
+        function calculateTotalHeight() {
+            let height = 0;
             for (let i = 1; i < csvData.length; i++) {
-                const row = document.createElement('tr');
-                row.dataset.row = i;
-                row.addEventListener('contextmenu', function(e) {
-                    e.preventDefault();
-                    showCsvContextMenu(e.clientX, e.clientY, 'row', i);
-                });
-                csvData[i].forEach((cell, index) => {
-                    const td = document.createElement('td');
-                    const textarea = document.createElement('textarea');
-                    textarea.value = cell;
-                    textarea.dataset.row = i;
-                    textarea.dataset.col = index;
-                    textarea.addEventListener('input', function() {
-                        this.style.height = '1px';
-                        this.style.height = this.scrollHeight + 'px';
-                        csvData[this.dataset.row][this.dataset.col] = this.value;
-                    });
-                    textarea.addEventListener('change', function() {
-                        csvData[this.dataset.row][this.dataset.col] = this.value;
-                    });
-                    td.appendChild(textarea);
-                    row.appendChild(td);
-                });
+                const cachedHeight = csvVirtualScroll.rowHeights.get(String(i));
+                if (cachedHeight) {
+                    height += cachedHeight;
+                } else {
+                    height += csvVirtualScroll.rowHeight;
+                }
+            }
+            return height;
+        }
+
+        function getVisibleRange(scrollTop) {
+            const container = csvVirtualScroll.container;
+            const containerHeight = container.clientHeight;
+            
+            let currentHeight = 0;
+            let startIndex = 1;
+            let endIndex = csvData.length - 1;
+            
+            for (let i = 1; i < csvData.length; i++) {
+                const rowHeight = csvVirtualScroll.rowHeights.get(String(i)) || csvVirtualScroll.rowHeight;
+                if (currentHeight + rowHeight >= scrollTop) {
+                    startIndex = Math.max(1, i - csvVirtualScroll.bufferRows);
+                    break;
+                }
+                currentHeight += rowHeight;
+            }
+            
+            currentHeight = 0;
+            for (let i = 1; i <= startIndex; i++) {
+                currentHeight += csvVirtualScroll.rowHeights.get(String(i)) || csvVirtualScroll.rowHeight;
+            }
+            
+            for (let i = startIndex; i < csvData.length; i++) {
+                currentHeight += csvVirtualScroll.rowHeights.get(String(i)) || csvVirtualScroll.rowHeight;
+                if (currentHeight >= scrollTop + containerHeight) {
+                    endIndex = Math.min(csvData.length - 1, i + csvVirtualScroll.bufferRows);
+                    break;
+                }
+            }
+            
+            return { startIndex, endIndex };
+        }
+
+        function renderVisibleRows() {
+            const tbody = document.getElementById('csv-tbody');
+            const { startIndex, endIndex } = getVisibleRange(csvVirtualScroll.scrollTop);
+            
+            if (startIndex === csvVirtualScroll.startIndex && endIndex === csvVirtualScroll.endIndex) {
+                return;
+            }
+            
+            csvVirtualScroll.startIndex = startIndex;
+            csvVirtualScroll.endIndex = endIndex;
+            
+            tbody.innerHTML = '';
+            
+            if (startIndex > 1) {
+                const topSpacer = document.createElement('tr');
+                topSpacer.className = 'spacer-row';
+                const topTd = document.createElement('td');
+                topTd.colSpan = csvData[0].length + 1;
+                let topHeight = 0;
+                for (let i = 1; i < startIndex; i++) {
+                    topHeight += csvVirtualScroll.rowHeights.get(String(i)) || csvVirtualScroll.rowHeight;
+                }
+                topTd.style.height = topHeight + 'px';
+                topTd.style.padding = '0';
+                topTd.style.border = 'none';
+                topSpacer.appendChild(topTd);
+                tbody.appendChild(topSpacer);
+            }
+            
+            for (let i = startIndex; i <= endIndex; i++) {
+                const row = createTableRow(i);
                 tbody.appendChild(row);
             }
-            table.appendChild(tbody);
-            table.querySelectorAll('td textarea').forEach(ta => {
-                ta.style.height = '1px';
-                void ta.offsetHeight;
-                ta.style.height = ta.scrollHeight + 'px';
+            
+            if (endIndex < csvData.length - 1) {
+                const bottomSpacer = document.createElement('tr');
+                bottomSpacer.className = 'spacer-row';
+                const bottomTd = document.createElement('td');
+                bottomTd.colSpan = csvData[0].length + 1;
+                let bottomHeight = 0;
+                for (let i = endIndex + 1; i < csvData.length; i++) {
+                    bottomHeight += csvVirtualScroll.rowHeights.get(String(i)) || csvVirtualScroll.rowHeight;
+                }
+                bottomTd.style.height = bottomHeight + 'px';
+                bottomTd.style.padding = '0';
+                bottomTd.style.border = 'none';
+                bottomSpacer.appendChild(bottomTd);
+                tbody.appendChild(bottomSpacer);
+            }
+        }
+
+        function createTableRow(rowIndex) {
+            const row = document.createElement('tr');
+            row.dataset.row = rowIndex;
+            row.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                showCsvContextMenu(e.clientX, e.clientY, 'row', rowIndex);
+            });
+            
+            const indicator = document.createElement('td');
+            indicator.className = 'row-indicator';
+            indicator.textContent = rowIndex;
+            row.appendChild(indicator);
+            
+            csvData[rowIndex].forEach((cell, index) => {
+                const td = document.createElement('td');
+                const textarea = document.createElement('textarea');
+                textarea.value = cell;
+                textarea.dataset.row = rowIndex;
+                textarea.dataset.col = index;
+                const cachedHeight = csvVirtualScroll.rowHeights.get(String(rowIndex));
+                if (cachedHeight) {
+                    textarea.style.height = cachedHeight + 'px';
+                }
+                textarea.addEventListener('input', function() {
+                    this.style.height = '1px';
+                    this.style.height = this.scrollHeight + 'px';
+                    csvData[this.dataset.row][this.dataset.col] = this.value;
+                    updateRowHeight(this.dataset.row);
+                });
+                textarea.addEventListener('change', function() {
+                    csvData[this.dataset.row][this.dataset.col] = this.value;
+                });
+                textarea.addEventListener('focus', function() {
+                    this.style.height = 'auto';
+                    this.style.height = this.scrollHeight + 'px';
+                });
+                textarea.addEventListener('blur', function() {
+                    updateRowHeight(this.dataset.row);
+                });
+                td.appendChild(textarea);
+                row.appendChild(td);
+            });
+            
+            return row;
+        }
+
+        function updateRowHeight(rowIndex) {
+            const textareas = document.querySelectorAll(`tr[data-row="${rowIndex}"] td textarea`);
+            if (textareas.length > 0) {
+                let maxHeight = 0;
+                textareas.forEach(ta => {
+                    if (ta.scrollHeight > maxHeight) {
+                        maxHeight = ta.scrollHeight;
+                    }
+                });
+                if (maxHeight === 0) maxHeight = csvVirtualScroll.rowHeight;
+                const key = String(rowIndex);
+                if (csvVirtualScroll.rowHeights.get(key) !== maxHeight) {
+                    csvVirtualScroll.rowHeights.set(key, maxHeight);
+                    csvVirtualScroll.totalHeight = calculateTotalHeight();
+                }
+            }
+        }
+
+        let scrollRAF = null;
+        function handleScroll() {
+            if (scrollRAF) return;
+            scrollRAF = requestAnimationFrame(() => {
+                csvVirtualScroll.scrollTop = csvVirtualScroll.container.scrollTop;
+                renderVisibleRows();
+                scrollRAF = null;
             });
         }
         

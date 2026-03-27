@@ -509,23 +509,39 @@ func matchColumnsLCS(orig, mod []string) []ColumnMapping {
 func matchRowsLCS(orig, mod [][]string, columns []ColumnMapping) []RowDiff {
 	m, n := len(orig), len(mod)
 
+	type direction int
+	const (
+		diag direction = iota
+		up
+		left
+	)
+
 	cellScore := make([][]int, m+1)
+	move := make([][]direction, m+1)
 	for i := range cellScore {
 		cellScore[i] = make([]int, n+1)
+		move[i] = make([]direction, n+1)
 	}
 
 	for i := 1; i <= m; i++ {
 		for j := 1; j <= n; j++ {
 			if rowsEqual(orig[i-1], mod[j-1]) {
 				cellScore[i][j] = cellScore[i-1][j-1] + len(orig[i-1])
+				move[i][j] = diag
 			} else {
 				matchCount := countMatchingColumns(orig[i-1], mod[j-1], columns)
-				if matchCount > 0 {
+				if matchCount > 0 && cellScore[i-1][j-1]+matchCount >= cellScore[i-1][j] && cellScore[i-1][j-1]+matchCount >= cellScore[i][j-1] {
 					cellScore[i][j] = cellScore[i-1][j-1] + matchCount
+					move[i][j] = diag
 				} else if cellScore[i-1][j] > cellScore[i][j-1] {
 					cellScore[i][j] = cellScore[i-1][j]
-				} else {
+					move[i][j] = up
+				} else if cellScore[i][j-1] > cellScore[i-1][j] {
 					cellScore[i][j] = cellScore[i][j-1]
+					move[i][j] = left
+				} else {
+					cellScore[i][j] = cellScore[i-1][j]
+					move[i][j] = up
 				}
 			}
 		}
@@ -534,7 +550,7 @@ func matchRowsLCS(orig, mod [][]string, columns []ColumnMapping) []RowDiff {
 	result := []RowDiff{}
 	i, j := m, n
 	for i > 0 || j > 0 {
-		if i > 0 && j > 0 && i-1 == j-1 && rowsEqualBySameColumns(orig[i-1], mod[j-1], columns) {
+		if i > 0 && j > 0 && move[i][j] == diag {
 			if rowsEqual(orig[i-1], mod[j-1]) {
 				result = append([]RowDiff{{OrigIndex: i - 1, NewIndex: j - 1, Status: "same"}}, result...)
 			} else {
@@ -542,15 +558,7 @@ func matchRowsLCS(orig, mod [][]string, columns []ColumnMapping) []RowDiff {
 			}
 			i--
 			j--
-		} else if i > 0 && j > 0 && rowsEqual(orig[i-1], mod[j-1]) {
-			result = append([]RowDiff{{OrigIndex: i - 1, NewIndex: j - 1, Status: "same"}}, result...)
-			i--
-			j--
-		} else if i > 0 && j > 0 && rowsEqualBySameColumns(orig[i-1], mod[j-1], columns) {
-			result = append([]RowDiff{{OrigIndex: i - 1, NewIndex: j - 1, Status: "changed"}}, result...)
-			i--
-			j--
-		} else if i > 0 && (j == 0 || cellScore[i-1][j] >= cellScore[i][j-1]) {
+		} else if i > 0 && (j == 0 || move[i][j] == up) {
 			result = append([]RowDiff{{OrigIndex: i - 1, NewIndex: -1, Status: "removed"}}, result...)
 			i--
 		} else if j > 0 {
