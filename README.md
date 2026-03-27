@@ -60,6 +60,7 @@
 ### 10. 自定义工具
 - 支持在 `diy_tools` 目录添加自定义工具
 - 每个工具通过 JSON 文件配置
+- 同一分组下的多个工具可以写在一个 JSON 文件中
 
 #### 配置格式
 
@@ -67,14 +68,19 @@
 
 ```json
 {
-    "name": "工具名称",
-    "fields": [
+    "group_name": "分组名称",
+    "tools": [
         {
-            "field_name": "参数名称",
-            "field_type": "row"
+            "name": "工具名称",
+            "fields": [
+                {
+                    "field_name": "参数名称",
+                    "field_type": "text"
+                }
+            ],
+            "cmd": "/可执行程序路径"
         }
-    ],
-    "cmd": "/可执行程序路径"
+    ]
 }
 ```
 
