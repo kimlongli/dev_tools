@@ -70,7 +70,7 @@
         .csv-table td { background: #252526; vertical-align: top; }
         .csv-table td:focus-within { outline: 2px solid #007acc; outline-offset: -2px; }
         .csv-table tr:hover td { background: #2a2d2e; }
-        .csv-table td textarea { background: transparent; border: none; color: inherit; font: inherit; padding: 0; margin: 0; width: 100%; resize: none; outline: none; box-sizing: border-box; display: block; line-height: 1.4; height: auto; }
+        .csv-table td textarea { background: transparent; border: none; color: inherit; font: inherit; padding: 0; margin: 0; width: 100%; resize: none; outline: none; box-sizing: border-box; display: block; line-height: 1.4; height: auto; overflow: visible; }
         .csv-table td textarea:focus { outline: none; }
         .csv-table th[contenteditable], .csv-table td[contenteditable] { -moz-appearance: textfield; }
         .csv-table .spacer-row td { background: transparent; padding: 0; border: none; }
@@ -1159,9 +1159,7 @@
                         i++;
                     }
                     currentRow.push(currentCell);
-                    if (currentRow.some(cell => cell !== '')) {
-                        rows.push(currentRow);
-                    }
+                    rows.push(currentRow);
                     currentRow = [];
                     currentCell = '';
                 } else {
@@ -1303,6 +1301,7 @@
             if (startIndex > 1) {
                 const topSpacer = document.createElement('tr');
                 topSpacer.className = 'spacer-row';
+                topSpacer.dataset.rows = '1-' + (startIndex - 1);
                 const topTd = document.createElement('td');
                 topTd.colSpan = csvData[0].length + 1;
                 let topHeight = 0;
@@ -1319,11 +1318,24 @@
             for (let i = startIndex; i <= endIndex; i++) {
                 const row = createTableRow(i);
                 tbody.appendChild(row);
+                row.offsetHeight;
+                const textareas = row.querySelectorAll('td textarea');
+                textareas.forEach(ta => {
+                    ta.style.height = 'auto';
+                    ta.style.height = ta.scrollHeight + 'px';
+                });
+                const rowHeight = row.offsetHeight;
+                const key = String(i);
+                if (csvVirtualScroll.rowHeights.get(key) !== rowHeight) {
+                    csvVirtualScroll.rowHeights.set(key, rowHeight);
+                    csvVirtualScroll.totalHeight = calculateTotalHeight();
+                }
             }
             
             if (endIndex < csvData.length - 1) {
                 const bottomSpacer = document.createElement('tr');
                 bottomSpacer.className = 'spacer-row';
+                bottomSpacer.dataset.rows = (endIndex + 1) + '-' + (csvData.length - 1);
                 const bottomTd = document.createElement('td');
                 bottomTd.colSpan = csvData[0].length + 1;
                 let bottomHeight = 0;
@@ -1357,10 +1369,7 @@
                 textarea.value = cell;
                 textarea.dataset.row = rowIndex;
                 textarea.dataset.col = index;
-                const cachedHeight = csvVirtualScroll.rowHeights.get(String(rowIndex));
-                if (cachedHeight) {
-                    textarea.style.height = cachedHeight + 'px';
-                }
+                textarea.style.height = 'auto';
                 textarea.addEventListener('input', function() {
                     this.style.height = '1px';
                     this.style.height = this.scrollHeight + 'px';
@@ -1375,7 +1384,10 @@
                     this.style.height = this.scrollHeight + 'px';
                 });
                 textarea.addEventListener('blur', function() {
+                    const savedScrollTop = csvVirtualScroll.container.scrollTop;
                     updateRowHeight(this.dataset.row);
+                    csvVirtualScroll.container.scrollTop = savedScrollTop;
+                    csvVirtualScroll.scrollTop = savedScrollTop;
                 });
                 td.appendChild(textarea);
                 row.appendChild(td);
@@ -1389,17 +1401,38 @@
             if (textareas.length > 0) {
                 let maxHeight = 0;
                 textareas.forEach(ta => {
-                    if (ta.scrollHeight > maxHeight) {
-                        maxHeight = ta.scrollHeight;
+                    ta.style.height = 'auto';
+                    const height = Math.max(ta.scrollHeight, 28);
+                    ta.style.height = height + 'px';
+                    if (height > maxHeight) {
+                        maxHeight = height;
                     }
                 });
-                if (maxHeight === 0) maxHeight = csvVirtualScroll.rowHeight;
                 const key = String(rowIndex);
                 if (csvVirtualScroll.rowHeights.get(key) !== maxHeight) {
                     csvVirtualScroll.rowHeights.set(key, maxHeight);
                     csvVirtualScroll.totalHeight = calculateTotalHeight();
+                    updateSpacerHeights();
                 }
             }
+        }
+        
+        function updateSpacerHeights() {
+            const tbody = document.getElementById('csv-tbody');
+            if (!tbody) return;
+            const spacerRows = tbody.querySelectorAll('.spacer-row');
+            spacerRows.forEach(spacer => {
+                const td = spacer.querySelector('td');
+                if (!td) return;
+                const rows = spacer.dataset.rows;
+                if (!rows) return;
+                const [start, end] = rows.split('-').map(Number);
+                let height = 0;
+                for (let i = start; i <= end; i++) {
+                    height += csvVirtualScroll.rowHeights.get(String(i)) || csvVirtualScroll.rowHeight;
+                }
+                td.style.height = height + 'px';
+            });
         }
 
         let scrollRAF = null;
@@ -1624,38 +1657,43 @@
 
         function parseCSVRows(text) {
             const rows = [];
-            const lines = text.split('\n');
-            lines.forEach(line => {
-                if (line.trim() === '' && rows.length > 0) return;
-                const cells = parseCSVLine(line);
-                rows.push(cells);
-            });
-            return rows;
-        }
-
-        function parseCSVLine(line) {
-            const cells = [];
-            let current = '';
+            let currentRow = [];
+            let currentCell = '';
             let inQuotes = false;
             
-            for (let i = 0; i < line.length; i++) {
-                const ch = line[i];
-                if (ch === '"') {
-                    if (inQuotes && line[i + 1] === '"') {
-                        current += '"';
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const nextChar = text[i + 1];
+                
+                if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                        currentCell += '"';
                         i++;
                     } else {
                         inQuotes = !inQuotes;
                     }
-                } else if (ch === ',' && !inQuotes) {
-                    cells.push(current);
-                    current = '';
+                } else if (char === ',' && !inQuotes) {
+                    currentRow.push(currentCell);
+                    currentCell = '';
+                } else if ((char === '\n' || char === '\r') && !inQuotes) {
+                    if (char === '\r' && nextChar === '\n') {
+                        i++;
+                    }
+                    currentRow.push(currentCell);
+                    rows.push(currentRow);
+                    currentRow = [];
+                    currentCell = '';
                 } else {
-                    current += ch;
+                    currentCell += char;
                 }
             }
-            cells.push(current);
-            return cells;
+            
+            currentRow.push(currentCell);
+            if (currentRow.length > 0) {
+                rows.push(currentRow);
+            }
+            
+            return rows;
         }
 
         function escapeCSV(cell) {
