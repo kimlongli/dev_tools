@@ -1237,6 +1237,15 @@
             }, 0);
 
             container.addEventListener('scroll', handleScroll);
+            container.addEventListener('wheel', function(e) {
+                const delta = e.deltaY;
+                if (delta !== 0) {
+                    e.preventDefault();
+                    csvVirtualScroll.container.scrollTop += delta;
+                    csvVirtualScroll.scrollTop = csvVirtualScroll.container.scrollTop;
+                    renderVisibleRows();
+                }
+            }, { passive: false });
         }
 
         function calculateTotalHeight() {
