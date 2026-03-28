@@ -1785,8 +1785,12 @@
             hideCsvContextMenu();
             if (csvData.length <= 1) return;
             saveCsvHistory();
+            const savedScrollTop = csvVirtualScroll ? csvVirtualScroll.container.scrollTop : 0;
             csvData.splice(index, 1);
             renderCSVTable();
+            if (csvVirtualScroll) {
+                csvVirtualScroll.container.scrollTop = savedScrollTop;
+            }
         }
 
         function addCsvColumnBefore(index) {
