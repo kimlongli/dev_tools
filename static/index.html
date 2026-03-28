@@ -70,7 +70,7 @@
         .csv-table td { background: #252526; vertical-align: top; }
         .csv-table td:focus-within { outline: 2px solid #007acc; outline-offset: -2px; }
         .csv-table tr:hover td { background: #2a2d2e; }
-        .csv-table td textarea { background: transparent; border: none; color: inherit; font: inherit; padding: 0; margin: 0; width: 100%; resize: none; outline: none; box-sizing: border-box; display: block; line-height: 1.4; height: auto; overflow: visible; }
+        .csv-table td textarea { background: transparent; border: none; color: inherit; font: inherit; padding: 0; margin: 0; width: 100%; resize: none; outline: none; box-sizing: border-box; display: block; line-height: 1.4; height: auto; overflow: hidden; }
         .csv-table td textarea:focus { outline: none; }
         .csv-table th[contenteditable], .csv-table td[contenteditable] { -moz-appearance: textfield; }
         .csv-table .spacer-row td { background: transparent; padding: 0; border: none; }
@@ -1436,8 +1436,10 @@
         function handleScroll() {
             if (scrollRAF) return;
             scrollRAF = requestAnimationFrame(() => {
-                csvVirtualScroll.scrollTop = csvVirtualScroll.container.scrollTop;
+                const savedScrollTop = csvVirtualScroll.container.scrollTop;
+                csvVirtualScroll.scrollTop = savedScrollTop;
                 renderVisibleRows();
+                csvVirtualScroll.container.scrollTop = savedScrollTop;
                 scrollRAF = null;
             });
         }
