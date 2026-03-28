@@ -1185,17 +1185,26 @@
 
             const savedScrollTop = csvVirtualScroll ? csvVirtualScroll.scrollTop : 0;
 
-            csvVirtualScroll = {
-                scrollTop: savedScrollTop,
-                rowHeight: 28,
-                visibleRows: Math.ceil(500 / 28) + 10,
-                bufferRows: 5,
-                startIndex: 1,
-                endIndex: 1,
-                rowHeights: new Map(),
-                totalHeight: 0,
-                container: container
-            };
+            if (!csvVirtualScroll) {
+                csvVirtualScroll = {
+                    scrollTop: savedScrollTop,
+                    rowHeight: 28,
+                    visibleRows: Math.ceil(500 / 28) + 10,
+                    bufferRows: 5,
+                    startIndex: 1,
+                    endIndex: 1,
+                    rowHeights: new Map(),
+                    totalHeight: 0,
+                    container: container
+                };
+                container.addEventListener('scroll', handleScroll);
+            } else {
+                csvVirtualScroll.scrollTop = savedScrollTop;
+                csvVirtualScroll.rowHeights.clear();
+                csvVirtualScroll.startIndex = 1;
+                csvVirtualScroll.endIndex = 1;
+                csvVirtualScroll.totalHeight = 0;
+            }
 
             csvVirtualScroll.totalHeight = calculateTotalHeight();
             
@@ -1232,8 +1241,6 @@
                 csvVirtualScroll.scrollTop = savedScrollTop;
                 renderVisibleRows();
             }, 0);
-
-            container.addEventListener('scroll', handleScroll);
         }
 
         function calculateTotalHeight() {
