@@ -1793,6 +1793,10 @@
             if (csvData.length <= 1) return;
             saveCsvHistory();
             const savedScrollTop = csvVirtualScroll ? csvVirtualScroll.container.scrollTop : 0;
+            if (scrollRAF) {
+                cancelAnimationFrame(scrollRAF);
+                scrollRAF = null;
+            }
             csvData.splice(index, 1);
             renderCSVTable();
             if (csvVirtualScroll) {
