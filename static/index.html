@@ -1176,14 +1176,14 @@
             renderCSVTable();
         }
 
-        function renderCSVTable() {
+        function renderCSVTable(targetScrollTop) {
             const table = document.getElementById('csv-table');
             const container = table.closest('.csv-table-container');
             table.innerHTML = '';
             
             if (csvData.length === 0) return;
 
-            const savedScrollTop = csvVirtualScroll ? csvVirtualScroll.scrollTop : 0;
+            const savedScrollTop = targetScrollTop !== undefined ? targetScrollTop : (csvVirtualScroll ? csvVirtualScroll.scrollTop : 0);
 
             if (!csvVirtualScroll) {
                 csvVirtualScroll = {
@@ -1200,7 +1200,6 @@
                 container.addEventListener('scroll', handleScroll);
             } else {
                 csvVirtualScroll.scrollTop = savedScrollTop;
-                csvVirtualScroll.rowHeights.clear();
                 csvVirtualScroll.startIndex = 1;
                 csvVirtualScroll.endIndex = 1;
                 csvVirtualScroll.totalHeight = 0;
@@ -1236,11 +1235,9 @@
             tbody.id = 'csv-tbody';
             table.appendChild(tbody);
 
-            setTimeout(() => {
-                container.scrollTop = savedScrollTop;
-                csvVirtualScroll.scrollTop = savedScrollTop;
-                renderVisibleRows();
-            }, 0);
+            csvVirtualScroll.scrollTop = savedScrollTop;
+            renderVisibleRows();
+            container.scrollTop = savedScrollTop;
         }
 
         function calculateTotalHeight() {
@@ -1259,6 +1256,14 @@
         function getVisibleRange(scrollTop) {
             const container = csvVirtualScroll.container;
             const containerHeight = container.clientHeight;
+            window.dbgGVR = {
+                scrollTop,
+                csvDataLength: csvData.length,
+                rowHeightsSize: csvVirtualScroll.rowHeights.size,
+                rowHeightsKeys: Array.from(csvVirtualScroll.rowHeights.keys()).sort((a,b) => parseInt(a)-parseInt(b)),
+                rowHeight: csvVirtualScroll.rowHeight,
+                bufferRows: csvVirtualScroll.bufferRows
+            };
             
             let currentHeight = 0;
             let startIndex = 1;
@@ -1268,6 +1273,7 @@
                 const rowHeight = csvVirtualScroll.rowHeights.get(String(i)) || csvVirtualScroll.rowHeight;
                 if (currentHeight + rowHeight >= scrollTop) {
                     startIndex = Math.max(1, i - csvVirtualScroll.bufferRows);
+                    window.dbgGVR.firstPassBreak = { i, currentHeight, rowHeight, total: currentHeight + rowHeight, startIndex };
                     break;
                 }
                 currentHeight += rowHeight;
@@ -1282,6 +1288,7 @@
                 currentHeight += csvVirtualScroll.rowHeights.get(String(i)) || csvVirtualScroll.rowHeight;
                 if (currentHeight >= scrollTop + containerHeight) {
                     endIndex = Math.min(csvData.length - 1, i + csvVirtualScroll.bufferRows);
+                    window.dbgGVR.thirdPassBreak = { i, currentHeight, endIndex };
                     break;
                 }
             }
@@ -1289,11 +1296,21 @@
             return { startIndex, endIndex };
         }
 
-        function renderVisibleRows() {
+        function renderVisibleRows(overrideStartIndex, overrideEndIndex) {
             const tbody = document.getElementById('csv-tbody');
-            const { startIndex, endIndex } = getVisibleRange(csvVirtualScroll.scrollTop);
+            let startIndex, endIndex;
             
-            if (startIndex === csvVirtualScroll.startIndex && endIndex === csvVirtualScroll.endIndex) {
+            if (overrideStartIndex !== undefined && overrideEndIndex !== undefined) {
+                startIndex = overrideStartIndex;
+                endIndex = overrideEndIndex;
+            } else {
+                const range = getVisibleRange(csvVirtualScroll.scrollTop);
+                startIndex = range.startIndex;
+                endIndex = range.endIndex;
+            }
+            window.dbgRenderVR = { scrollTop: csvVirtualScroll.scrollTop, startIndex, endIndex, si: csvVirtualScroll.startIndex, ei: csvVirtualScroll.endIndex, rhSize: csvVirtualScroll.rowHeights.size, isOverride: overrideStartIndex !== undefined };
+            
+            if (startIndex === csvVirtualScroll.startIndex && endIndex === csvVirtualScroll.endIndex && csvVirtualScroll.rowHeights.size > 0 && !(overrideStartIndex !== undefined)) {
                 return;
             }
             
@@ -1439,10 +1456,84 @@
             });
         }
 
+        function measureRowHeightsBatch(startIndex, endIndex) {
+            const fragment = document.createDocumentFragment();
+            const tempRows = [];
+            
+            for (let i = startIndex; i <= endIndex; i++) {
+                const row = createTableRow(i);
+                row.style.position = 'absolute';
+                row.style.left = '-9999px';
+                fragment.appendChild(row);
+                tempRows.push({row, index: i});
+            }
+            
+            document.body.appendChild(fragment);
+            
+            const results = new Map();
+            tempRows.forEach(({row, index}) => {
+                const height = row.offsetHeight;
+                results.set(String(index), height);
+                document.body.removeChild(row);
+            });
+            
+            return results;
+        }
+
+        function calculateAverageRowHeight() {
+            let total = 0, count = 0;
+            csvVirtualScroll.rowHeights.forEach(height => {
+                total += height;
+                count++;
+            });
+            return count > 0 ? Math.round(total / count) : csvVirtualScroll.rowHeight;
+        }
+
+        function ensureHeightsCachedUpTo(targetIndex, batchSize = 50) {
+            if (targetIndex < 1) return;
+            
+            const missingIndices = [];
+            for (let i = 1; i <= targetIndex; i++) {
+                if (!csvVirtualScroll.rowHeights.has(String(i))) {
+                    missingIndices.push(i);
+                }
+            }
+            
+            if (missingIndices.length === 0) return;
+            
+            const missingCount = missingIndices.length;
+            if (missingCount > 200) {
+                console.warn(`测量 ${missingCount} 行可能影响性能，使用平均高度估算`);
+                const avgHeight = calculateAverageRowHeight();
+                for (let i = 1; i <= targetIndex; i++) {
+                    if (!csvVirtualScroll.rowHeights.has(String(i))) {
+                        csvVirtualScroll.rowHeights.set(String(i), avgHeight);
+                    }
+                }
+                return;
+            }
+            
+            for (let i = 0; i < missingIndices.length; i += batchSize) {
+                const batchStart = missingIndices[i];
+                const batchEnd = Math.min(missingIndices[i + batchSize - 1], missingIndices[missingIndices.length - 1]);
+                
+                const batchResults = measureRowHeightsBatch(batchStart, batchEnd);
+                batchResults.forEach((height, index) => {
+                    csvVirtualScroll.rowHeights.set(index, height);
+                });
+            }
+        }
+
         let scrollRAF = null;
+        let skipNextScrollHandler = false;
         function handleScroll() {
             if (scrollRAF) return;
             scrollRAF = requestAnimationFrame(() => {
+                if (skipNextScrollHandler) {
+                    skipNextScrollHandler = false;
+                    scrollRAF = null;
+                    return;
+                }
                 const savedScrollTop = csvVirtualScroll.container.scrollTop;
                 csvVirtualScroll.scrollTop = savedScrollTop;
                 renderVisibleRows();
@@ -1790,17 +1881,104 @@
 
         function deleteCsvRowByIndex(index) {
             hideCsvContextMenu();
-            if (csvData.length <= 1) return;
             saveCsvHistory();
-            const savedScrollTop = csvVirtualScroll ? csvVirtualScroll.container.scrollTop : 0;
-            if (scrollRAF) {
-                cancelAnimationFrame(scrollRAF);
-                scrollRAF = null;
-            }
+            
+            const container = csvVirtualScroll.container;
+            const tbody = document.getElementById('csv-tbody');
+            const scrollTopBefore = container.scrollTop;
+            
+            const topVisibleIndexBefore = csvVirtualScroll.startIndex;
+            const topVisibleRowId = csvData[topVisibleIndexBefore] ? csvData[topVisibleIndexBefore][0] : null;
+            
+            const deletedRowEl = tbody.querySelector(`tr[data-row="${index}"]`);
+            const deletedRowIsVisible = !!deletedRowEl;
+            
             csvData.splice(index, 1);
-            renderCSVTable();
-            if (csvVirtualScroll) {
-                csvVirtualScroll.container.scrollTop = savedScrollTop;
+            
+            if (deletedRowIsVisible && deletedRowEl) {
+                const deletedHeight = deletedRowEl.offsetHeight;
+                deletedRowEl.remove();
+                
+                for (let i = index + 1; i <= csvData.length + 1; i++) {
+                    const rowEl = tbody.querySelector(`tr[data-row="${i}"]`);
+                    if (rowEl) {
+                        rowEl.dataset.row = String(i - 1);
+                    }
+                }
+                
+                csvVirtualScroll.rowHeights.clear();
+                Array.from(tbody.querySelectorAll('tr[data-row]')).forEach(rowEl => {
+                    const i = parseInt(rowEl.dataset.row);
+                    csvVirtualScroll.rowHeights.set(String(i), rowEl.offsetHeight);
+                });
+                
+                csvVirtualScroll.totalHeight -= deletedHeight;
+                
+                container.scrollTop = scrollTopBefore;
+                csvVirtualScroll.scrollTop = scrollTopBefore;
+                
+                csvVirtualScroll.startIndex = topVisibleIndexBefore;
+                csvVirtualScroll.endIndex = topVisibleIndexBefore;
+                renderVisibleRows();
+                
+                container.scrollTop = scrollTopBefore;
+                csvVirtualScroll.scrollTop = scrollTopBefore;
+            } else {
+                console.log('deleteCsvRowByIndex non-visible branch: index=', index, 'topVisibleIndexBefore=', topVisibleIndexBefore, 'topVisibleRowId=', topVisibleRowId, 'scrollTopBefore=', scrollTopBefore);
+                ensureHeightsCachedUpTo(index - 1);
+                
+                let deletedHeight = csvVirtualScroll.rowHeights.get(String(index));
+                if (deletedHeight === undefined) {
+                    const tempRow = createTableRow(index);
+                    tempRow.style.position = 'absolute';
+                    tempRow.style.left = '-9999px';
+                    document.body.appendChild(tempRow);
+                    deletedHeight = tempRow.offsetHeight;
+                    document.body.removeChild(tempRow);
+                    csvVirtualScroll.rowHeights.set(String(index), deletedHeight);
+                }
+                
+                csvVirtualScroll.rowHeights.delete(String(index));
+                const newRowHeights = new Map();
+                for (const [k, v] of csvVirtualScroll.rowHeights) {
+                    const kNum = parseInt(k);
+                    if (kNum > index) {
+                        newRowHeights.set(String(kNum - 1), v);
+                    } else if (kNum < index) {
+                        newRowHeights.set(k, v);
+                    }
+                }
+                csvVirtualScroll.rowHeights = newRowHeights;
+                
+                csvVirtualScroll.totalHeight -= deletedHeight;
+                
+                let newTopVisibleIndex = 1;
+                if (topVisibleRowId) {
+                    for (let i = 1; i < csvData.length; i++) {
+                        if (csvData[i] && csvData[i][0] === topVisibleRowId) {
+                            newTopVisibleIndex = i;
+                            break;
+                        }
+                    }
+                } else {
+                    newTopVisibleIndex = topVisibleIndexBefore > index ? topVisibleIndexBefore - 1 : topVisibleIndexBefore;
+                    newTopVisibleIndex = Math.max(1, Math.min(newTopVisibleIndex, csvData.length - 1));
+                }
+                console.log('deleteCsvRowByIndex: newTopVisibleIndex=', newTopVisibleIndex, 'csvData.length=', csvData.length);
+                ensureHeightsCachedUpTo(newTopVisibleIndex - 1);
+                
+                let exactScrollTop = 0;
+                for (let i = 1; i < newTopVisibleIndex; i++) {
+                    exactScrollTop += csvVirtualScroll.rowHeights.get(String(i)) || csvVirtualScroll.rowHeight;
+                }
+                console.log('deleteCsvRowByIndex: exactScrollTop=', exactScrollTop, 'newTopVisibleIndex=', newTopVisibleIndex, 'rowHeights size=', csvVirtualScroll.rowHeights.size);
+                container.scrollTop = exactScrollTop;
+                csvVirtualScroll.scrollTop = exactScrollTop;
+                
+                const visibleRowsCount = csvVirtualScroll.visibleRows;
+                const renderEndIndex = Math.min(csvData.length - 1, newTopVisibleIndex + visibleRowsCount - 1);
+                ensureHeightsCachedUpTo(renderEndIndex);
+                renderVisibleRows(newTopVisibleIndex, renderEndIndex);
             }
         }
 
