@@ -1927,23 +1927,59 @@
                 csvVirtualScroll.rowHeights.delete(String(index));
                 csvVirtualScroll.totalHeight -= deletedHeight;
                 
-                // 简化方案：直接修改 csvVirtualScroll 的内部状态，并重置 container.scrollTop
+                // 简化方案：不使用 renderVisibleRows 的 override 参数
+                // 而是直接在删除后手动重建 DOM，确保可视区域内容不变
                 const visibleRowsCount = csvVirtualScroll.visibleRows;
-                const newStartIndex = topVisibleIndexBefore;
-                const newEndIndex = Math.min(csvData.length - 1, newStartIndex + visibleRowsCount - 1);
+                const startIdx = topVisibleIndexBefore;
+                const endIdx = Math.min(csvData.length - 1, startIdx + visibleRowsCount - 1);
                 
-                // 重置 container.scrollTop 为 0，避免浏览器恢复滚动位置
-                container.scrollTop = 0;
-                csvVirtualScroll.scrollTop = 0;
+                // 重建可见行 DOM
+                tbody.innerHTML = '';
                 
-                // 更新 csvVirtualScroll 的状态
-                csvVirtualScroll.startIndex = newStartIndex;
-                csvVirtualScroll.endIndex = newEndIndex;
+                // 创建顶部 spacer
+                if (startIdx > 1) {
+                    const topSpacer = document.createElement('tr');
+                    topSpacer.className = 'spacer-row';
+                    topSpacer.dataset.rows = '1-' + (startIdx - 1);
+                    const topTd = document.createElement('td');
+                    topTd.colSpan = csvData[0].length + 1;
+                    let topHeight = 0;
+                    for (let i = 1; i < startIdx; i++) {
+                        topHeight += csvVirtualScroll.rowHeights.get(String(i)) || csvVirtualScroll.rowHeight;
+                    }
+                    topTd.style.height = topHeight + 'px';
+                    topTd.style.padding = '0';
+                    topTd.style.border = 'none';
+                    topSpacer.appendChild(topTd);
+                    tbody.appendChild(topSpacer);
+                }
                 
-                // 调用 renderVisibleRows 让它根据 override 参数重新渲染
-                renderVisibleRows(newStartIndex, newEndIndex);
+                // 创建可见行
+                for (let i = startIdx; i <= endIdx; i++) {
+                    const row = createTableRow(i);
+                    tbody.appendChild(row);
+                }
                 
-                console.log('delete visible: index=', index, 'topVisibleIndexBefore=', topVisibleIndexBefore, 'newStartIndex=', newStartIndex, 'newEndIndex=', newEndIndex);
+                // 创建底部 spacer
+                if (endIdx < csvData.length - 1) {
+                    const bottomSpacer = document.createElement('tr');
+                    bottomSpacer.className = 'spacer-row';
+                    bottomSpacer.dataset.rows = (endIdx + 1) + '-' + (csvData.length - 1);
+                    const bottomTd = document.createElement('td');
+                    bottomTd.colSpan = csvData[0].length + 1;
+                    let bottomHeight = 0;
+                    for (let i = endIdx + 1; i < csvData.length; i++) {
+                        bottomHeight += csvVirtualScroll.rowHeights.get(String(i)) || csvVirtualScroll.rowHeight;
+                    }
+                    bottomTd.style.height = bottomHeight + 'px';
+                    bottomTd.style.padding = '0';
+                    bottomTd.style.border = 'none';
+                    bottomSpacer.appendChild(bottomTd);
+                    tbody.appendChild(bottomSpacer);
+                }
+                
+                csvVirtualScroll.startIndex = startIdx;
+                csvVirtualScroll.endIndex = endIdx;
             } else {
                 console.log('deleteCsvRowByIndex non-visible branch: index=', index, 'topVisibleIndexBefore=', topVisibleIndexBefore, 'topVisibleRowId=', topVisibleRowId, 'scrollTopBefore=', scrollTopBefore);
                 ensureHeightsCachedUpTo(index - 1);
