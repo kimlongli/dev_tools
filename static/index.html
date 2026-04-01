@@ -1310,7 +1310,8 @@
             }
             window.dbgRenderVR = { scrollTop: csvVirtualScroll.scrollTop, startIndex, endIndex, si: csvVirtualScroll.startIndex, ei: csvVirtualScroll.endIndex, rhSize: csvVirtualScroll.rowHeights.size, isOverride: overrideStartIndex !== undefined };
             
-            if (startIndex === csvVirtualScroll.startIndex && endIndex === csvVirtualScroll.endIndex && csvVirtualScroll.rowHeights.size > 0 && !(overrideStartIndex !== undefined)) {
+            // 如果有override参数或者startIndex/endIndex变化，需要重新渲染
+            if (startIndex === csvVirtualScroll.startIndex && endIndex === csvVirtualScroll.endIndex && csvVirtualScroll.rowHeights.size > 0 && overrideStartIndex === undefined) {
                 return;
             }
             
@@ -1914,11 +1915,16 @@
                 
                 csvVirtualScroll.totalHeight -= deletedHeight;
                 
+                // 修复：删除可视区域内的行后，保持可视内容的起始位置
+                // 而不是保持scrollTop，因为totalHeight减少会导致位置偏移
+                // 删除后，原来可视区域的第一行应该变成新的第一行（index减1）
+                const newStartIndex = topVisibleIndexBefore; // 保持原来的起始索引
+                
                 container.scrollTop = scrollTopBefore;
                 csvVirtualScroll.scrollTop = scrollTopBefore;
                 
-                csvVirtualScroll.startIndex = topVisibleIndexBefore;
-                csvVirtualScroll.endIndex = topVisibleIndexBefore;
+                csvVirtualScroll.startIndex = newStartIndex;
+                csvVirtualScroll.endIndex = newStartIndex;
                 renderVisibleRows();
                 
                 container.scrollTop = scrollTopBefore;
