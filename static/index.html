@@ -1915,18 +1915,25 @@
                 
                 csvVirtualScroll.totalHeight -= deletedHeight;
                 
-                // 修复：删除可视区域内的行后，保持可视内容的起始位置
-                // 而不是保持scrollTop，因为totalHeight减少会导致位置偏移
-                // 删除后，原来可视区域的第一行应该变成新的第一行（index减1）
-                const newStartIndex = topVisibleIndexBefore; // 保持原来的起始索引
+                // 修复：删除可视区域内行后，保持可视内容不变
+                // 方法：保持原来的scrollTop不变，让getVisibleRange()自动计算正确的可见范围
+                // 这样可视内容会显示相同的数据（只是行号变了，因为删除了某行）
+                
+                // 关键：删除可视区域行后，要保持可视内容不变
+                // 需要渲染正确的可见行数
+                // 注意：删除第n行后，原来第n+1行会变成第n行
+                // 所以要设置 newStartIndex = topVisibleIndexBefore + 1
+                const newStartIndex = topVisibleIndexBefore + 1;
+                const visibleRowsCount = csvVirtualScroll.visibleRows;
+                const newEndIndex = Math.min(csvData.length - 1, newStartIndex + visibleRowsCount - 1);
                 
                 container.scrollTop = scrollTopBefore;
                 csvVirtualScroll.scrollTop = scrollTopBefore;
                 
-                csvVirtualScroll.startIndex = newStartIndex;
-                csvVirtualScroll.endIndex = newStartIndex;
-                renderVisibleRows();
+                // 调用renderVisibleRows，使用override参数强制设置可见范围
+                renderVisibleRows(newStartIndex, newEndIndex);
                 
+                // 确保scrollTop不被改变
                 container.scrollTop = scrollTopBefore;
                 csvVirtualScroll.scrollTop = scrollTopBefore;
             } else {
