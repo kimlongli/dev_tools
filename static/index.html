@@ -1630,7 +1630,7 @@
             fetch('/api/csv-diff', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ old_content: oldContent, new_content: newContent })
+                body: JSON.stringify({ OldContent: oldContent, NewContent: newContent })
             })
             .then(response => response.json())
             .then(result => {
