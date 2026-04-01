@@ -1908,6 +1908,10 @@
             
             if (deletedRowIsVisible && deletedRowEl) {
                 const deletedHeight = deletedRowEl.offsetHeight;
+                
+                // 保存当前滚动位置，以便删除后恢复
+                const currentScrollTop = container.scrollTop;
+                
                 deletedRowEl.remove();
                 
                 // 更新 DOM 中所有剩余行的 data-row 属性，并同步更新 rowHeights
@@ -1927,11 +1931,22 @@
                 csvVirtualScroll.rowHeights.delete(String(index));
                 csvVirtualScroll.totalHeight -= deletedHeight;
                 
-                // 简化方案：不使用 renderVisibleRows 的 override 参数
-                // 而是直接在删除后手动重建 DOM，确保可视区域内容不变
+                // 计算新的滚动位置，保持可视区域内容不变
                 const visibleRowsCount = csvVirtualScroll.visibleRows;
                 const startIdx = topVisibleIndexBefore;
                 const endIdx = Math.min(csvData.length - 1, startIdx + visibleRowsCount - 1);
+                
+                // 计算新的 scrollTop：保持原来可视区域的第一行在相同位置
+                // 如果删除的行在可视区域上方或内部，需要调整 scrollTop
+                let newScrollTop = currentScrollTop;
+                if (index <= topVisibleIndexBefore) {
+                    // 删除的行在可视区域开始之前或内部，scrollTop 不需要额外调整
+                    // 因为后续行会上移填补空缺，但可视内容应该保持不变
+                    newScrollTop = currentScrollTop;
+                } else {
+                    // 删除的行在可视区域之后，scrollTop 不变
+                    newScrollTop = currentScrollTop;
+                }
                 
                 // 重建可见行 DOM
                 tbody.innerHTML = '';
@@ -1980,6 +1995,10 @@
                 
                 csvVirtualScroll.startIndex = startIdx;
                 csvVirtualScroll.endIndex = endIdx;
+                
+                // 恢复滚动位置
+                container.scrollTop = newScrollTop;
+                csvVirtualScroll.scrollTop = newScrollTop;
             } else {
                 console.log('deleteCsvRowByIndex non-visible branch: index=', index, 'topVisibleIndexBefore=', topVisibleIndexBefore, 'topVisibleRowId=', topVisibleRowId, 'scrollTopBefore=', scrollTopBefore);
                 ensureHeightsCachedUpTo(index - 1);
