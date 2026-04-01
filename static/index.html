@@ -1910,29 +1910,36 @@
                 const deletedHeight = deletedRowEl.offsetHeight;
                 deletedRowEl.remove();
                 
-                for (let i = index + 1; i <= csvData.length + 1; i++) {
-                    const rowEl = tbody.querySelector(`tr[data-row="${i}"]`);
-                    if (rowEl) {
-                        rowEl.dataset.row = String(i - 1);
+                // 更新 DOM 中所有剩余行的 data-row 属性，并同步更新 rowHeights
+                const allRows = Array.from(tbody.querySelectorAll('tr[data-row]'));
+                for (let j = allRows.length - 1; j >= 0; j--) {
+                    const rowEl = allRows[j];
+                    const oldIndex = parseInt(rowEl.dataset.row);
+                    if (oldIndex > index) {
+                        const newIndex = oldIndex - 1;
+                        rowEl.dataset.row = String(newIndex);
+                        csvVirtualScroll.rowHeights.set(String(newIndex), rowEl.offsetHeight);
+                    } else if (oldIndex < index) {
+                        csvVirtualScroll.rowHeights.set(String(oldIndex), rowEl.offsetHeight);
                     }
                 }
                 
-                csvVirtualScroll.rowHeights.clear();
-                Array.from(tbody.querySelectorAll('tr[data-row]')).forEach(rowEl => {
-                    const i = parseInt(rowEl.dataset.row);
-                    csvVirtualScroll.rowHeights.set(String(i), rowEl.offsetHeight);
-                });
-                
+                csvVirtualScroll.rowHeights.delete(String(index));
                 csvVirtualScroll.totalHeight -= deletedHeight;
                 
-                // 修复：删除可视区域内行后，保持可视内容不变
-                // 方法：保持原来的scrollTop不变，让getVisibleRange()自动计算正确的可见范围
+                // 简化方案：直接修改 csvVirtualScroll 的内部状态，不修改 container.scrollTop
+                const visibleRowsCount = csvVirtualScroll.visibleRows;
+                const newStartIndex = topVisibleIndexBefore;
+                const newEndIndex = Math.min(csvData.length - 1, newStartIndex + visibleRowsCount - 1);
                 
-                container.scrollTop = scrollTopBefore;
-                csvVirtualScroll.scrollTop = scrollTopBefore;
+                // 不修改 container.scrollTop，只更新 csvVirtualScroll 的状态
+                csvVirtualScroll.startIndex = newStartIndex;
+                csvVirtualScroll.endIndex = newEndIndex;
                 
-                // 调用renderVisibleRows让getVisibleRange自动计算正确的可见范围
-                renderVisibleRows();
+                // 调用 renderVisibleRows 让它根据 override 参数重新渲染
+                renderVisibleRows(newStartIndex, newEndIndex);
+                
+                console.log('delete visible: index=', index, 'topVisibleIndexBefore=', topVisibleIndexBefore, 'newStartIndex=', newStartIndex, 'newEndIndex=', newEndIndex);
             } else {
                 console.log('deleteCsvRowByIndex non-visible branch: index=', index, 'topVisibleIndexBefore=', topVisibleIndexBefore, 'topVisibleRowId=', topVisibleRowId, 'scrollTopBefore=', scrollTopBefore);
                 ensureHeightsCachedUpTo(index - 1);
