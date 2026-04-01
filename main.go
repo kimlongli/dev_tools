@@ -137,8 +137,8 @@ type ListDirRequest struct {
 }
 
 type CsvDiffRequest struct {
-	OldContent string `json:"old_content"`
-	NewContent string `json:"new_content"`
+	OldContent string `json:"OldContent"`
+	NewContent string `json:"NewContent"`
 }
 
 type CellDiff struct {
