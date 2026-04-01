@@ -1952,19 +1952,19 @@
                 
                 csvVirtualScroll.totalHeight -= deletedHeight;
                 
-                let newTopVisibleIndex = 1;
-                if (topVisibleRowId) {
-                    for (let i = 1; i < csvData.length; i++) {
-                        if (csvData[i] && csvData[i][0] === topVisibleRowId) {
-                            newTopVisibleIndex = i;
-                            break;
-                        }
-                    }
-                } else {
-                    newTopVisibleIndex = topVisibleIndexBefore > index ? topVisibleIndexBefore - 1 : topVisibleIndexBefore;
-                    newTopVisibleIndex = Math.max(1, Math.min(newTopVisibleIndex, csvData.length - 1));
+                // 修复：直接使用 topVisibleIndexBefore，不依赖 topVisibleRowId 查找
+                // 删除非可视区域行时，保持原来的可视起始位置不变
+                // 因为删除一行后，后面的行会自动上移填充，保持滚动位置即可保持可视内容不变
+                let newTopVisibleIndex = topVisibleIndexBefore;
+                
+                // 如果删除的行索引小于可视区域起始索引，可视区域需要上移一行
+                if (index < topVisibleIndexBefore) {
+                    newTopVisibleIndex = topVisibleIndexBefore - 1;
                 }
-                console.log('deleteCsvRowByIndex: newTopVisibleIndex=', newTopVisibleIndex, 'csvData.length=', csvData.length);
+                // 否则保持 topVisibleIndexBefore 不变（删除行在可视区域下方或就是起始行）
+                
+                newTopVisibleIndex = Math.max(1, Math.min(newTopVisibleIndex, csvData.length - 1));
+                console.log('deleteCsvRowByIndex: newTopVisibleIndex=', newTopVisibleIndex, 'csvData.length=', csvData.length, 'topVisibleIndexBefore=', topVisibleIndexBefore, 'index=', index);
                 ensureHeightsCachedUpTo(newTopVisibleIndex - 1);
                 
                 let exactScrollTop = 0;
