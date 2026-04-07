@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -141,6 +142,20 @@ type CsvDiffRequest struct {
 	NewContent string `json:"NewContent"`
 }
 
+type TextDiffRequest struct {
+	OldContent string `json:"old_content"`
+	NewContent string `json:"new_content"`
+}
+
+type TextDiffLine struct {
+	Type  string `json:"type"` // "added", "removed", "unchanged"
+	Value string `json:"value"`
+}
+
+type TextDiffResponse struct {
+	Lines []TextDiffLine `json:"lines"`
+}
+
 type CellDiff struct {
 	Type int    `json:"type"`
 	Line string `json:"line"`
@@ -178,6 +193,7 @@ func main() {
 	mux.HandleFunc("/api/list-dir", handleListDir)
 	mux.HandleFunc("/api/home-dir", handleHomeDir)
 	mux.HandleFunc("/api/csv-diff", handleCsvDiff)
+	mux.HandleFunc("/api/text-diff", handleTextDiff)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -425,6 +441,78 @@ func handleCsvDiff(w http.ResponseWriter, r *http.Request) {
 		Columns: columns,
 		Rows:    rows,
 	})
+}
+
+func handleTextDiff(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req TextDiffRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	lines1 := strings.Split(req.OldContent, "\n")
+	lines2 := strings.Split(req.NewContent, "\n")
+
+	m := len(lines1)
+	n := len(lines2)
+
+	// 计算编辑距离矩阵
+	dp := make([][]int, m+1)
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+		dp[i][0] = i
+	}
+	for j := 1; j <= n; j++ {
+		dp[0][j] = j
+	}
+
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			if lines1[i-1] == lines2[j-1] {
+				dp[i][j] = dp[i-1][j-1]
+			} else {
+				minVal := dp[i-1][j]
+				if dp[i][j-1] < minVal {
+					minVal = dp[i][j-1]
+				}
+				if dp[i-1][j-1] < minVal {
+					minVal = dp[i-1][j-1]
+				}
+				dp[i][j] = minVal + 1
+			}
+		}
+	}
+
+	// 回溯生成diff
+	result := []TextDiffLine{}
+	i, j := m, n
+	for i > 0 || j > 0 {
+		if i > 0 && j > 0 && lines1[i-1] == lines2[j-1] {
+			result = append([]TextDiffLine{{Type: "unchanged", Value: lines1[i-1]}}, result...)
+			i--
+			j--
+		} else if j > 0 && (i == 0 || dp[i][j-1] <= dp[i-1][j] && dp[i][j-1] <= dp[i-1][j-1]) {
+			result = append([]TextDiffLine{{Type: "added", Value: lines2[j-1]}}, result...)
+			j--
+		} else if i > 0 && (j == 0 || dp[i-1][j] < dp[i][j-1] || dp[i-1][j] <= dp[i-1][j-1]) {
+			result = append([]TextDiffLine{{Type: "removed", Value: lines1[i-1]}}, result...)
+			i--
+		} else {
+			result = append([]TextDiffLine{{Type: "removed", Value: lines1[i-1]}}, result...)
+			result = append([]TextDiffLine{{Type: "added", Value: lines2[j-1]}}, result...)
+			i--
+			j--
+		}
+	}
+
+	json.NewEncoder(w).Encode(TextDiffResponse{Lines: result})
 }
 
 func parseCSVRows(text string) [][]string {

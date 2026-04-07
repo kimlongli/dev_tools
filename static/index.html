@@ -746,24 +746,38 @@
         }
 
         // 文本比较
-        function compareDiff() {
+        async function compareDiff() {
             const original = document.getElementById('diff-original').value;
             const newText = document.getElementById('diff-new').value;
             
-            const diff = computeDiff(original, newText);
-            let result = '';
-            
-            for (const line of diff) {
-                if (line.type === 'added') {
-                    result += '<span class="diff-line diff-add">+ ' + escapeHtml(line.value) + '</span>';
-                } else if (line.type === 'removed') {
-                    result += '<span class="diff-line diff-remove">- ' + escapeHtml(line.value) + '</span>';
-                } else {
-                    result += '<span class="diff-line">  ' + escapeHtml(line.value) + '</span>';
+            try {
+                const response = await fetch('/api/text-diff', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ old_content: original, new_content: newText })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('请求失败: ' + response.status);
                 }
+                
+                const data = await response.json();
+                let result = '';
+                
+                for (const line of data.lines) {
+                    if (line.type === 'added') {
+                        result += '<span class="diff-line diff-add">+ ' + escapeHtml(line.value) + '</span>';
+                    } else if (line.type === 'removed') {
+                        result += '<span class="diff-line diff-remove">- ' + escapeHtml(line.value) + '</span>';
+                    } else {
+                        result += '<span class="diff-line">  ' + escapeHtml(line.value) + '</span>';
+                    }
+                }
+                
+                document.getElementById('diff-result').innerHTML = '<pre>' + result + '</pre>';
+            } catch (error) {
+                document.getElementById('diff-result').innerHTML = '<div class="result" style="color: #e06c75;">错误: ' + escapeHtml(error.message) + '</div>';
             }
-            
-            document.getElementById('diff-result').innerHTML = '<pre>' + result + '</pre>';
         }
 
         function computeDiff(text1, text2) {
