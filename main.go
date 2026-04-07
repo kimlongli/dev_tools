@@ -466,7 +466,7 @@ func removeWhitespace(s string) string {
 	return result.String()
 }
 
-// whitespaceToSymbol 将空白字符转换为可见符号
+// whitespaceToSymbol 将空白字符转换为可见符号（不带填充）
 func whitespaceToSymbol(c rune) string {
 	switch c {
 	case ' ':
@@ -483,6 +483,49 @@ func whitespaceToSymbol(c rune) string {
 		return "↕"
 	default:
 		return string(c)
+	}
+}
+
+// getCharDisplay 根据字符类型和差异状态返回显示字符串
+func getCharDisplay(c rune, diffType string) string {
+	// diffType 可以是: "same", "space_added", "space_removed"
+	isSpace := isWhitespace(c)
+	isDiff := diffType == "space_added" || diffType == "space_removed"
+
+	if !isSpace {
+		// 非空白字符直接返回
+		return string(c)
+	}
+
+	if !isDiff {
+		// 相同的空白字符
+		switch c {
+		case ' ':
+			return " "
+		case '\t':
+			// 相同制表符显示为4个空格
+			return "    "
+		case '\r', '\n':
+			// 换行符不应该出现在行内字符diff中，但为了完整性
+			return string(c)
+		default:
+			// 其他空白字符显示为1个空格
+			return " "
+		}
+	} else {
+		// 差异的空白字符
+		switch c {
+		case ' ':
+			// 差异空格显示为符号，不填充
+			return "·"
+		case '\t':
+			// 差异制表符显示为符号+3个空格，共4字符宽度
+			return "→   "
+		case '\r', '\n':
+			return whitespaceToSymbol(c)
+		default:
+			return whitespaceToSymbol(c)
+		}
 	}
 }
 
@@ -569,7 +612,7 @@ func compareLinesWithSpaceDiff(line1, line2 string) (bool, []CharDiff) {
 			// 匹配
 			c := chars1[i-1]
 			charType := "same"
-			result = append([]CharDiff{{Type: charType, Char: whitespaceToSymbol(c)}}, result...)
+			result = append([]CharDiff{{Type: charType, Char: getCharDisplay(c, charType)}}, result...)
 			i--
 			j--
 		} else if j > 0 && (i == 0 || ops[i][j] == 2) {
@@ -579,7 +622,7 @@ func compareLinesWithSpaceDiff(line1, line2 string) (bool, []CharDiff) {
 			if isWhitespace(c) {
 				charType = "space_added"
 			}
-			result = append([]CharDiff{{Type: charType, Char: whitespaceToSymbol(c)}}, result...)
+			result = append([]CharDiff{{Type: charType, Char: getCharDisplay(c, charType)}}, result...)
 			j--
 		} else if i > 0 && (j == 0 || ops[i][j] == 1) {
 			// 删除的字符
@@ -588,22 +631,25 @@ func compareLinesWithSpaceDiff(line1, line2 string) (bool, []CharDiff) {
 			if isWhitespace(c) {
 				charType = "space_removed"
 			}
-			result = append([]CharDiff{{Type: charType, Char: whitespaceToSymbol(c)}}, result...)
+			result = append([]CharDiff{{Type: charType, Char: getCharDisplay(c, charType)}}, result...)
 			i--
 		} else if i > 0 && j > 0 && ops[i][j] == 3 {
 			// 替换操作（字符不同）
 			c1, c2 := chars1[i-1], chars2[j-1]
 			// 由于我们知道去掉空白后内容相同，所以至少有一个是空白字符
+			var type1, type2 string
 			if isWhitespace(c1) {
-				result = append([]CharDiff{{Type: "space_removed", Char: whitespaceToSymbol(c1)}}, result...)
+				type1 = "space_removed"
 			} else {
-				result = append([]CharDiff{{Type: "same", Char: string(c1)}}, result...)
+				type1 = "same"
 			}
 			if isWhitespace(c2) {
-				result = append([]CharDiff{{Type: "space_added", Char: whitespaceToSymbol(c2)}}, result...)
+				type2 = "space_added"
 			} else {
-				result = append([]CharDiff{{Type: "same", Char: string(c2)}}, result...)
+				type2 = "same"
 			}
+			result = append([]CharDiff{{Type: type1, Char: getCharDisplay(c1, type1)}}, result...)
+			result = append([]CharDiff{{Type: type2, Char: getCharDisplay(c2, type2)}}, result...)
 			i--
 			j--
 		} else {
@@ -614,7 +660,7 @@ func compareLinesWithSpaceDiff(line1, line2 string) (bool, []CharDiff) {
 				if isWhitespace(c) {
 					charType = "space_removed"
 				}
-				result = append([]CharDiff{{Type: charType, Char: whitespaceToSymbol(c)}}, result...)
+				result = append([]CharDiff{{Type: charType, Char: getCharDisplay(c, charType)}}, result...)
 				i--
 			} else if j > 0 {
 				c := chars2[j-1]
@@ -622,7 +668,7 @@ func compareLinesWithSpaceDiff(line1, line2 string) (bool, []CharDiff) {
 				if isWhitespace(c) {
 					charType = "space_added"
 				}
-				result = append([]CharDiff{{Type: charType, Char: whitespaceToSymbol(c)}}, result...)
+				result = append([]CharDiff{{Type: charType, Char: getCharDisplay(c, charType)}}, result...)
 				j--
 			}
 		}
