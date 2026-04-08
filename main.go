@@ -474,28 +474,7 @@ func tabToSpaces(s string) string {
 // isValidSpecialLine 检查两行是否适合作为特殊行（仅空白字符差异）
 // 返回true如果两行适合作为特殊行匹配
 func isValidSpecialLine(line1, line2 string) bool {
-	// 如果一行完全为空而另一行不为空，不适合作为特殊行
-	if (line1 == "" && line2 != "") || (line1 != "" && line2 == "") {
-		return false
-	}
-
-	// 检查是否有显著不同的空白字符模式
-	// 简单启发式：如果一行有前导空白而另一行没有，不适合作为特殊行
-	// 因为语义可能非常不同（如结束内层块 vs 结束外层块）
-	hasLeading1 := len(line1) > 0 && isWhitespace(rune(line1[0]))
-	hasLeading2 := len(line2) > 0 && isWhitespace(rune(line2[0]))
-	if hasLeading1 != hasLeading2 {
-		return false
-	}
-
-	// 进一步检查：如果一行有尾部空白而另一行没有，也不适合
-	hasTrailing1 := len(line1) > 0 && isWhitespace(rune(line1[len(line1)-1]))
-	hasTrailing2 := len(line2) > 0 && isWhitespace(rune(line2[len(line2)-1]))
-	if hasTrailing1 != hasTrailing2 {
-		return false
-	}
-
-	// 默认允许作为特殊行
+	// 通用文本diff：允许所有空白字符差异
 	return true
 }
 
