@@ -495,17 +495,6 @@ func isValidSpecialLine(line1, line2 string) bool {
 		return false
 	}
 
-	// 检查前导空白字符数量
-	// 如果两行都有前导空白，但数量不同，则不适合作为特殊行
-	// 因为缩进级别不同通常表示语义不同（如结束不同层级的代码块）
-	if hasLeading1 && hasLeading2 {
-		count1 := countLeadingWhitespace(line1)
-		count2 := countLeadingWhitespace(line2)
-		if count1 != count2 {
-			return false
-		}
-	}
-
 	// 默认允许作为特殊行
 	return true
 }
@@ -829,21 +818,7 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// 2. 删除操作
-		if i > 0 && (j == 0 || dp[i][j] == dp[i-1][j]+2) {
-			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
-			i--
-			continue
-		}
-
-		// 3. 添加操作
-		if j > 0 && (i == 0 || dp[i][j] == dp[i][j-1]+2) {
-			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
-			j--
-			continue
-		}
-
-		// 4. 特殊行匹配（仅空白字符差异）
+		// 2. 特殊行匹配（仅空白字符差异）
 		if i > 0 && j > 0 && match[i][j] == 2 && dp[i][j] == dp[i-1][j-1]+2 {
 			_, charDiffs := compareLinesWithSpaceDiff(lines1[i-1], lines2[j-1])
 			result = append([]TextDiffLine{
@@ -855,6 +830,20 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 				},
 			}, result...)
 			i--
+			j--
+			continue
+		}
+
+		// 3. 删除操作
+		if i > 0 && (j == 0 || dp[i][j] == dp[i-1][j]+2) {
+			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
+			i--
+			continue
+		}
+
+		// 4. 添加操作
+		if j > 0 && (i == 0 || dp[i][j] == dp[i][j-1]+2) {
+			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
 			j--
 			continue
 		}
