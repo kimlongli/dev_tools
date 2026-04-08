@@ -474,7 +474,25 @@ func tabToSpaces(s string) string {
 // isValidSpecialLine 检查两行是否适合作为特殊行（仅空白字符差异）
 // 返回true如果两行适合作为特殊行匹配
 func isValidSpecialLine(line1, line2 string) bool {
-	// 通用文本diff：允许所有空白字符差异
+	// 通用文本diff基本检查：空行与非空行不匹配为特殊行
+	if (line1 == "" && line2 != "") || (line1 != "" && line2 == "") {
+		return false
+	}
+
+	// 检查是否有前导空白存在性差异
+	// 如果一行有前导空白而另一行没有，不适合作为特殊行
+	// 这有助于避免如"    }"与"}"的错误匹配
+	hasLeading1 := len(line1) > 0 && isWhitespace(rune(line1[0]))
+	hasLeading2 := len(line2) > 0 && isWhitespace(rune(line2[0]))
+	if hasLeading1 != hasLeading2 {
+		// 调试输出
+		if strings.Contains(line1, "}") && strings.Contains(line2, "}") && removeWhitespace(line1) == removeWhitespace(line2) {
+			fmt.Printf("[DEBUG] isValidSpecialLine: line1=%q, line2=%q, hasLeading1=%v, hasLeading2=%v -> false\n", line1, line2, hasLeading1, hasLeading2)
+		}
+		return false
+	}
+
+	// 允许所有其他空白字符差异
 	return true
 }
 
@@ -753,7 +771,7 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 计算编辑距离矩阵（使用乘以2的因子：完全匹配=0，特殊行=1，删除/添加/替换=2）
+	// 计算编辑距离矩阵（使用乘以2的因子：完全匹配=0，删除/添加=2，特殊行=10，替换=4）
 	dp := make([][]int, m+1)
 	for i := range dp {
 		dp[i] = make([]int, n+1)
@@ -769,16 +787,16 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 				// 完全相同的行：成本0（乘以2后）
 				dp[i][j] = dp[i-1][j-1]
 			} else if match[i][j] == 2 {
-				// 特殊行（仅空白字符差异）：成本2（与删除/添加相同，乘以2后）
-				dp[i][j] = dp[i-1][j-1] + 2
+				// 特殊行（仅空白字符差异）：成本10（乘以2后为20）
+				dp[i][j] = dp[i-1][j-1] + 20
 			} else {
-				// 不匹配：计算最小编辑距离（成本2，乘以2后）
-				minVal := dp[i-1][j] + 2 // 删除
+				// 不匹配：计算最小编辑距离
+				minVal := dp[i-1][j] + 2 // 删除成本2（乘以2后）
 				if dp[i][j-1]+2 < minVal {
-					minVal = dp[i][j-1] + 2 // 添加
+					minVal = dp[i][j-1] + 2 // 添加成本2（乘以2后）
 				}
-				if dp[i-1][j-1]+2 < minVal {
-					minVal = dp[i-1][j-1] + 2 // 替换
+				if dp[i-1][j-1]+8 < minVal {
+					minVal = dp[i-1][j-1] + 8 // 替换成本4（乘以2后为8）
 				}
 				dp[i][j] = minVal
 			}
@@ -797,8 +815,22 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// 2. 特殊行匹配（仅空白字符差异）
-		if i > 0 && j > 0 && match[i][j] == 2 && dp[i][j] == dp[i-1][j-1]+2 {
+		// 2. 删除操作
+		if i > 0 && (j == 0 || dp[i][j] == dp[i-1][j]+2) {
+			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
+			i--
+			continue
+		}
+
+		// 3. 添加操作
+		if j > 0 && (i == 0 || dp[i][j] == dp[i][j-1]+2) {
+			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
+			j--
+			continue
+		}
+
+		// 4. 特殊行匹配（仅空白字符差异）
+		if i > 0 && j > 0 && match[i][j] == 2 && dp[i][j] == dp[i-1][j-1]+20 {
 			_, charDiffs := compareLinesWithSpaceDiff(lines1[i-1], lines2[j-1])
 			result = append([]TextDiffLine{
 				{
@@ -813,22 +845,8 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// 3. 删除操作
-		if i > 0 && (j == 0 || dp[i][j] == dp[i-1][j]+2) {
-			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
-			i--
-			continue
-		}
-
-		// 4. 添加操作
-		if j > 0 && (i == 0 || dp[i][j] == dp[i][j-1]+2) {
-			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
-			j--
-			continue
-		}
-
 		// 5. 替换操作
-		if i > 0 && j > 0 && dp[i][j] == dp[i-1][j-1]+2 {
+		if i > 0 && j > 0 && dp[i][j] == dp[i-1][j-1]+8 {
 			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
 			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
 			i--
