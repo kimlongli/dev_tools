@@ -479,20 +479,16 @@ func isValidSpecialLine(line1, line2 string) bool {
 		return false
 	}
 
-	// 检查是否有前导空白存在性差异
-	// 如果一行有前导空白而另一行没有，不适合作为特殊行
-	// 这有助于避免如"    }"与"}"的错误匹配
-	hasLeading1 := len(line1) > 0 && isWhitespace(rune(line1[0]))
-	hasLeading2 := len(line2) > 0 && isWhitespace(rune(line2[0]))
-	if hasLeading1 != hasLeading2 {
-		// 调试输出
-		if strings.Contains(line1, "}") && strings.Contains(line2, "}") && removeWhitespace(line1) == removeWhitespace(line2) {
-			fmt.Printf("[DEBUG] isValidSpecialLine: line1=%q, line2=%q, hasLeading1=%v, hasLeading2=%v -> false\n", line1, line2, hasLeading1, hasLeading2)
-		}
+	// 检查是否一行只有空白字符而另一行不是
+	// 例如："    "（只有空格）与"    }"不应匹配为特殊行
+	if strings.TrimSpace(line1) == "" && strings.TrimSpace(line2) != "" {
+		return false
+	}
+	if strings.TrimSpace(line1) != "" && strings.TrimSpace(line2) == "" {
 		return false
 	}
 
-	// 允许所有其他空白字符差异
+	// 通用文本diff：允许所有其他空白字符差异
 	return true
 }
 
@@ -507,6 +503,25 @@ func countLeadingWhitespace(s string) int {
 		}
 	}
 	return count
+}
+
+// countLeadingWhitespaceVisual 计算字符串开头连续空白字符的视觉宽度
+// 空格=1，制表符=4（标准制表位）
+func countLeadingWhitespaceVisual(s string) int {
+	width := 0
+	for _, c := range s {
+		if c == ' ' {
+			width += 1
+		} else if c == '\t' {
+			width += 4
+		} else if isWhitespace(c) {
+			// 其他空白字符视为1宽度
+			width += 1
+		} else {
+			break
+		}
+	}
+	return width
 }
 
 // abs 返回整数的绝对值
