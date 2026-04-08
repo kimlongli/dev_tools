@@ -488,6 +488,15 @@ func isValidSpecialLine(line1, line2 string) bool {
 		return false
 	}
 
+	// 检查前导空白视觉宽度差异
+	// 如果两行的前导空白视觉宽度差异超过2个字符，则不应匹配为特殊行
+	// 这可以防止不同缩进级别的行被错误匹配（如"    }"与"}"）
+	leading1 := countLeadingWhitespaceVisual(line1)
+	leading2 := countLeadingWhitespaceVisual(line2)
+	if abs(leading1-leading2) > 2 {
+		return false
+	}
+
 	// 通用文本diff：允许所有其他空白字符差异
 	return true
 }
