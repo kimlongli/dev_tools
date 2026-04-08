@@ -489,11 +489,21 @@ func isValidSpecialLine(line1, line2 string) bool {
 	}
 
 	// 检查前导空白视觉宽度差异
-	// 如果两行的前导空白视觉宽度差异超过2个字符，则不应匹配为特殊行
-	// 这可以防止不同缩进级别的行被错误匹配（如"    }"与"}"）
+	// 根据非空白内容长度动态调整阈值
+	// 短行（如"}"）严格限制，长行（如"if !isWhitespace(c) {"）放宽限制
+	content1 := removeWhitespace(line1)
+	content2 := removeWhitespace(line2)
 	leading1 := countLeadingWhitespaceVisual(line1)
 	leading2 := countLeadingWhitespaceVisual(line2)
-	if abs(leading1-leading2) > 2 {
+	leadingDiff := abs(leading1 - leading2)
+
+	// 动态阈值：短行阈值2，长行阈值4
+	maxAllowedDiff := 2
+	if len(content1) > 2 && len(content2) > 2 {
+		maxAllowedDiff = 4
+	}
+
+	if leadingDiff > maxAllowedDiff {
 		return false
 	}
 
