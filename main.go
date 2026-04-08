@@ -466,6 +466,71 @@ func removeWhitespace(s string) string {
 	return result.String()
 }
 
+// tabToSpaces 将制表符转换为4个空格
+func tabToSpaces(s string) string {
+	return strings.ReplaceAll(s, "\t", "    ")
+}
+
+// isValidSpecialLine 检查两行是否适合作为特殊行（仅空白字符差异）
+// 返回true如果两行适合作为特殊行匹配
+func isValidSpecialLine(line1, line2 string) bool {
+	// 如果一行完全为空而另一行不为空，不适合作为特殊行
+	if (line1 == "" && line2 != "") || (line1 != "" && line2 == "") {
+		return false
+	}
+
+	// 检查是否有显著不同的空白字符模式
+	// 简单启发式：如果一行有前导空白而另一行没有，不适合作为特殊行
+	// 因为语义可能非常不同（如结束内层块 vs 结束外层块）
+	hasLeading1 := len(line1) > 0 && isWhitespace(rune(line1[0]))
+	hasLeading2 := len(line2) > 0 && isWhitespace(rune(line2[0]))
+	if hasLeading1 != hasLeading2 {
+		return false
+	}
+
+	// 进一步检查：如果一行有尾部空白而另一行没有，也不适合
+	hasTrailing1 := len(line1) > 0 && isWhitespace(rune(line1[len(line1)-1]))
+	hasTrailing2 := len(line2) > 0 && isWhitespace(rune(line2[len(line2)-1]))
+	if hasTrailing1 != hasTrailing2 {
+		return false
+	}
+
+	// 检查前导空白字符数量
+	// 如果两行都有前导空白，但数量不同，则不适合作为特殊行
+	// 因为缩进级别不同通常表示语义不同（如结束不同层级的代码块）
+	if hasLeading1 && hasLeading2 {
+		count1 := countLeadingWhitespace(line1)
+		count2 := countLeadingWhitespace(line2)
+		if count1 != count2 {
+			return false
+		}
+	}
+
+	// 默认允许作为特殊行
+	return true
+}
+
+// countLeadingWhitespace 计算字符串开头连续空白字符的数量
+func countLeadingWhitespace(s string) int {
+	count := 0
+	for _, c := range s {
+		if isWhitespace(c) {
+			count++
+		} else {
+			break
+		}
+	}
+	return count
+}
+
+// abs 返回整数的绝对值
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 // whitespaceToSymbol 将空白字符转换为可见符号（不带填充）
 func whitespaceToSymbol(c rune) string {
 	switch c {
@@ -712,7 +777,7 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 			line1, line2 := lines1[i-1], lines2[j-1]
 			if line1 == line2 {
 				match[i][j] = 1 // 完全相同
-			} else if removeWhitespace(line1) == removeWhitespace(line2) {
+			} else if removeWhitespace(line1) == removeWhitespace(line2) && isValidSpecialLine(line1, line2) {
 				match[i][j] = 2 // 特殊行
 			} else {
 				match[i][j] = 0 // 不匹配
@@ -720,30 +785,34 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 计算编辑距离矩阵
+	// 计算编辑距离矩阵（使用乘以2的因子：完全匹配=0，特殊行=1，删除/添加/替换=2）
 	dp := make([][]int, m+1)
 	for i := range dp {
 		dp[i] = make([]int, n+1)
-		dp[i][0] = i
+		dp[i][0] = i * 2 // 删除成本为2（乘以2后）
 	}
 	for j := 1; j <= n; j++ {
-		dp[0][j] = j
+		dp[0][j] = j * 2 // 添加成本为2（乘以2后）
 	}
 
 	for i := 1; i <= m; i++ {
 		for j := 1; j <= n; j++ {
-			if match[i][j] > 0 {
-				// 匹配（完全相同或特殊行）
+			if match[i][j] == 1 {
+				// 完全相同的行：成本0（乘以2后）
 				dp[i][j] = dp[i-1][j-1]
+			} else if match[i][j] == 2 {
+				// 特殊行（仅空白字符差异）：成本2（与删除/添加相同，乘以2后）
+				dp[i][j] = dp[i-1][j-1] + 2
 			} else {
-				minVal := dp[i-1][j]
-				if dp[i][j-1] < minVal {
-					minVal = dp[i][j-1]
+				// 不匹配：计算最小编辑距离（成本2，乘以2后）
+				minVal := dp[i-1][j] + 2 // 删除
+				if dp[i][j-1]+2 < minVal {
+					minVal = dp[i][j-1] + 2 // 添加
 				}
-				if dp[i-1][j-1] < minVal {
-					minVal = dp[i-1][j-1]
+				if dp[i-1][j-1]+2 < minVal {
+					minVal = dp[i-1][j-1] + 2 // 替换
 				}
-				dp[i][j] = minVal + 1
+				dp[i][j] = minVal
 			}
 		}
 	}
@@ -752,41 +821,61 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 	result := []TextDiffLine{}
 	i, j := m, n
 	for i > 0 || j > 0 {
-		if i > 0 && j > 0 && match[i][j] > 0 {
-			// 匹配的行
-			line1, line2 := lines1[i-1], lines2[j-1]
-			matchType := match[i][j]
+		// 1. 完全相同的行（最高优先级）
+		if i > 0 && j > 0 && match[i][j] == 1 && dp[i][j] == dp[i-1][j-1] {
+			result = append([]TextDiffLine{{Type: "unchanged", Value: tabToSpaces(lines1[i-1])}}, result...)
+			i--
+			j--
+			continue
+		}
 
-			if matchType == 1 {
-				// 完全相同
-				result = append([]TextDiffLine{{Type: "unchanged", Value: line1}}, result...)
-			} else {
-				// 特殊行（仅空白字符差异）
-				_, charDiffs := compareLinesWithSpaceDiff(line1, line2)
-				result = append([]TextDiffLine{
-					{
-						Type:      "unchanged",
-						Value:     line1,
-						Special:   true,
-						CharDiffs: charDiffs,
-					},
-				}, result...)
-			}
+		// 2. 删除操作
+		if i > 0 && (j == 0 || dp[i][j] == dp[i-1][j]+2) {
+			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
+			i--
+			continue
+		}
+
+		// 3. 添加操作
+		if j > 0 && (i == 0 || dp[i][j] == dp[i][j-1]+2) {
+			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
+			j--
+			continue
+		}
+
+		// 4. 特殊行匹配（仅空白字符差异）
+		if i > 0 && j > 0 && match[i][j] == 2 && dp[i][j] == dp[i-1][j-1]+2 {
+			_, charDiffs := compareLinesWithSpaceDiff(lines1[i-1], lines2[j-1])
+			result = append([]TextDiffLine{
+				{
+					Type:      "unchanged",
+					Value:     tabToSpaces(lines1[i-1]),
+					Special:   true,
+					CharDiffs: charDiffs,
+				},
+			}, result...)
 			i--
 			j--
-		} else if j > 0 && (i == 0 || dp[i][j-1] <= dp[i-1][j] && dp[i][j-1] <= dp[i-1][j-1]) {
-			// 添加的行
-			result = append([]TextDiffLine{{Type: "added", Value: lines2[j-1]}}, result...)
+			continue
+		}
+
+		// 5. 替换操作
+		if i > 0 && j > 0 && dp[i][j] == dp[i-1][j-1]+2 {
+			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
+			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
+			i--
 			j--
-		} else if i > 0 && (j == 0 || dp[i-1][j] < dp[i][j-1] || dp[i-1][j] <= dp[i-1][j-1]) {
-			// 删除的行
-			result = append([]TextDiffLine{{Type: "removed", Value: lines1[i-1]}}, result...)
+			continue
+		}
+
+		// 6. 回退策略：如果以上都不匹配，选择成本最小的操作
+		if i > 0 && (j == 0 || dp[i-1][j] <= dp[i][j-1]) {
+			// 删除
+			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
 			i--
-		} else {
-			// 替换操作
-			result = append([]TextDiffLine{{Type: "removed", Value: lines1[i-1]}}, result...)
-			result = append([]TextDiffLine{{Type: "added", Value: lines2[j-1]}}, result...)
-			i--
+		} else if j > 0 {
+			// 添加
+			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
 			j--
 		}
 	}
