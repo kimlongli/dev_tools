@@ -963,7 +963,13 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 				dp[i][j] = dp[i-1][j-1]
 			} else if match[i][j] == 2 {
 				// 特殊行（仅空白字符差异）：成本1.5（乘以2后为3）
-				dp[i][j] = dp[i-1][j-1] + 3
+				// 增加位置惩罚：位置差越大，成本越高
+				posDiff := i - j
+				if posDiff < 0 {
+					posDiff = -posDiff
+				}
+				positionPenalty := posDiff * 2 // 每行位置差增加2成本
+				dp[i][j] = dp[i-1][j-1] + 3 + positionPenalty
 			} else {
 				// 不匹配：计算最小编辑距离
 				minVal := dp[i-1][j] + 2 // 删除成本2（乘以2后）
