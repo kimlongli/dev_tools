@@ -474,39 +474,74 @@ func tabToSpaces(s string) string {
 // isValidSpecialLine 检查两行是否适合作为特殊行（仅空白字符差异）
 // 返回true如果两行适合作为特殊行匹配
 func isValidSpecialLine(line1, line2 string) bool {
+	// 调试：记录检查
+	debug := false
+
 	// 通用文本diff基本检查：空行与非空行不匹配为特殊行
 	if (line1 == "" && line2 != "") || (line1 != "" && line2 == "") {
+		if debug {
+			fmt.Printf("[DEBUG] isValidSpecialLine: 空行检查失败 line1=%q line2=%q\n", line1, line2)
+		}
 		return false
 	}
 
 	// 检查是否一行只有空白字符而另一行不是
 	// 例如："    "（只有空格）与"    }"不应匹配为特殊行
 	if strings.TrimSpace(line1) == "" && strings.TrimSpace(line2) != "" {
+		if debug {
+			fmt.Printf("[DEBUG] isValidSpecialLine: 只有空白字符检查失败1 line1=%q line2=%q\n", line1, line2)
+		}
 		return false
 	}
 	if strings.TrimSpace(line1) != "" && strings.TrimSpace(line2) == "" {
+		if debug {
+			fmt.Printf("[DEBUG] isValidSpecialLine: 只有空白字符检查失败2 line1=%q line2=%q\n", line1, line2)
+		}
 		return false
 	}
 
 	// 检查前导空白视觉宽度差异
-	// 根据非空白内容长度动态调整阈值
-	// 短行（如"}"）严格限制，长行（如"if !isWhitespace(c) {"）放宽限制
 	content1 := removeWhitespace(line1)
 	content2 := removeWhitespace(line2)
 	leading1 := countLeadingWhitespaceVisual(line1)
 	leading2 := countLeadingWhitespaceVisual(line2)
 	leadingDiff := abs(leading1 - leading2)
 
-	// 动态阈值：短行阈值2，长行阈值4
+	// 动态阈值调整：
+	// 1. 对于内容完全相同的行（去掉空白后），根据内容长度调整阈值
+	// 2. 单字符行（如括号）允许更大阈值，因为缩进变化可能只是格式化
 	maxAllowedDiff := 2
-	if len(content1) > 2 && len(content2) > 2 {
-		maxAllowedDiff = 4
+
+	// 如果非空白内容完全相同
+	if content1 == content2 {
+		contentLen := len(content1)
+		if contentLen == 1 {
+			// 单字符行（如"}"、"{"、";"等），可能是括号或标点
+			// 允许较大阈值，因为缩进变化可能只是格式化问题
+			maxAllowedDiff = 4
+		} else if contentLen > 2 {
+			// 长行允许更大阈值
+			maxAllowedDiff = 4
+		}
+		// 否则保持阈值2
+	}
+
+	if debug {
+		fmt.Printf("[DEBUG] isValidSpecialLine: line1=%q line2=%q\n", line1, line2)
+		fmt.Printf("[DEBUG]   content1=%q(len=%d) content2=%q(len=%d) same=%v\n", content1, len(content1), content2, len(content2), content1 == content2)
+		fmt.Printf("[DEBUG]   leading1=%d leading2=%d diff=%d maxAllowed=%d\n", leading1, leading2, leadingDiff, maxAllowedDiff)
 	}
 
 	if leadingDiff > maxAllowedDiff {
+		if debug {
+			fmt.Printf("[DEBUG] isValidSpecialLine: 前导空白差异超过阈值 %d > %d\n", leadingDiff, maxAllowedDiff)
+		}
 		return false
 	}
 
+	if debug {
+		fmt.Printf("[DEBUG] isValidSpecialLine: 通过检查\n")
+	}
 	// 通用文本diff：允许所有其他空白字符差异
 	return true
 }
