@@ -229,6 +229,61 @@ func test() {
 
 ---
 
+### 测试用例6：return语句缩进差异（用户最新案例）
+**描述**：测试return语句前制表符缩进差异的识别
+
+**输入**：
+```go
+// old_content
+func removeWhitespace(s string) string {
+	var result strings.Builder
+	for  _, c := range s {
+		if !isWhitespace(c) {
+			result.WriteRune(c)
+       }
+}
+	return  result.String()
+}
+
+// new_content
+func removeWhitespace(s string) string {
+	var result strings.Builder
+	for  _, c := range s {
+		if !isWhitespace(c) {
+			result.WriteRune(c)
+       }
+}
+return  result.String()
+
+}
+```
+
+**预期结果**：
+1. `return  result.String()`行显示为特殊行（仅缩进差异）
+2. 不显示为删除+添加操作
+3. 制表符差异正确显示为`→`符号
+4. 新版本的空行显示为添加操作
+
+**实际结果**：
+1. `return  result.String()`行正确显示为特殊行
+2. 不显示为删除+添加操作（正确识别为特殊行）
+3. 制表符差异显示为`→`符号
+4. 新版本空行显示为添加操作
+
+**测试输出**：
+```json
+{
+  "type": "unchanged",
+  "value": "    return  result.String()",
+  "special": true,
+  "char_diffs": [...]
+}
+```
+
+**状态**：✅ 通过
+
+---
+
 ## 测试环境
 - 服务地址：http://localhost:29999
 - API端点：POST `/api/text-diff`
@@ -244,8 +299,9 @@ func test() {
 所有测试用例必须通过（实际结果与预期结果一致）才能交付。
 
 ## 测试总结
-- ✅ **所有测试用例通过**：5/5 通过
+- ✅ **所有测试用例通过**：6/6 通过
 - ✅ **核心问题解决**：文本diff现在正确识别特殊行（仅空白字符差异）
+- ✅ **成本模型优化**：降低特殊行成本，优先匹配空白字符差异行
 - ✅ **无空白差异限制**：不再限制空白字符差异数量
 - ✅ **括号对齐优化**：不同缩进级别的括号正确识别为特殊行
 - ✅ **大缩进差异支持**：大缩进差异正确显示

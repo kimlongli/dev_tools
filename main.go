@@ -804,8 +804,8 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 				// 完全相同的行：成本0（乘以2后）
 				dp[i][j] = dp[i-1][j-1]
 			} else if match[i][j] == 2 {
-				// 特殊行（仅空白字符差异）：成本2（乘以2后为4）
-				dp[i][j] = dp[i-1][j-1] + 4
+				// 特殊行（仅空白字符差异）：成本1.5（乘以2后为3）
+				dp[i][j] = dp[i-1][j-1] + 3
 			} else {
 				// 不匹配：计算最小编辑距离
 				minVal := dp[i-1][j] + 2 // 删除成本2（乘以2后）
@@ -833,7 +833,7 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 2. 特殊行匹配（仅空白字符差异）
-		if i > 0 && j > 0 && match[i][j] == 2 && dp[i][j] == dp[i-1][j-1]+4 {
+		if i > 0 && j > 0 && match[i][j] == 2 && dp[i][j] == dp[i-1][j-1]+3 {
 			_, charDiffs := compareLinesWithSpaceDiff(lines1[i-1], lines2[j-1])
 			result = append([]TextDiffLine{
 				{
