@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 type Snapshot struct {
@@ -452,7 +454,7 @@ func handleCsvDiff(w http.ResponseWriter, r *http.Request) {
 
 // isWhitespace 检查字符是否为空白字符
 func isWhitespace(c rune) bool {
-	return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\f' || c == '\v'
+	return unicode.IsSpace(c)
 }
 
 // removeWhitespace 移除字符串中的所有空白字符
@@ -549,8 +551,11 @@ func whitespaceToSymbol(c rune) string {
 		return "↓"
 	case '\v':
 		return "↕"
+	case '\u00A0': // 不间断空格
+		return "␣"
 	default:
-		return string(c)
+		// 其他Unicode空白字符使用开放方框符号
+		return "␣"
 	}
 }
 
@@ -595,6 +600,68 @@ func getCharDisplay(c rune, diffType string) string {
 			return whitespaceToSymbol(c)
 		}
 	}
+}
+
+// compareLinesWithSpaceDiffSimple 简单算法比较两行，检查是否为特殊行（仅空白字符差异）
+// 返回 (是否为特殊行, 字符级diff)
+func compareLinesWithSpaceDiffSimple(line1, line2 string) (bool, []CharDiff) {
+	// 去掉空白后比较
+	if removeWhitespace(line1) != removeWhitespace(line2) {
+		return false, nil
+	}
+
+	// 去掉空白后相同，检查原始行是否相同
+	if line1 == line2 {
+		// 完全相同的行，不是特殊行（因为没有任何差异）
+		return false, nil
+	}
+
+	// 特殊行：仅空白字符差异，生成字符级diff
+	chars1 := []rune(line1)
+	chars2 := []rune(line2)
+	i, j := 0, 0
+	result := []CharDiff{}
+
+	for i < len(chars1) || j < len(chars2) {
+		// 跳过空白字符并记录差异
+		spaceRemoved := []rune{}
+		for i < len(chars1) && isWhitespace(chars1[i]) {
+			spaceRemoved = append(spaceRemoved, chars1[i])
+			i++
+		}
+		spaceAdded := []rune{}
+		for j < len(chars2) && isWhitespace(chars2[j]) {
+			spaceAdded = append(spaceAdded, chars2[j])
+			j++
+		}
+
+		// 添加空白字符差异
+		// 将空白字符序列视为整体，但为了保持字符级diff，我们逐个字符添加
+		// 注意：我们保持原始顺序，但不对齐
+		for _, c := range spaceRemoved {
+			result = append(result, CharDiff{Type: "space_removed", Char: getCharDisplay(c, "space_removed")})
+		}
+		for _, c := range spaceAdded {
+			result = append(result, CharDiff{Type: "space_added", Char: getCharDisplay(c, "space_added")})
+		}
+
+		// 处理非空白字符
+		if i < len(chars1) && j < len(chars2) {
+			// 根据前提，非空白字符必须相同
+			if chars1[i] != chars2[j] {
+				// 不应该发生，但以防万一
+				return false, nil
+			}
+			result = append(result, CharDiff{Type: "same", Char: getCharDisplay(chars1[i], "same")})
+			i++
+			j++
+		} else if i < len(chars1) || j < len(chars2) {
+			// 一个字符串有额外非空白字符？不应该发生
+			return false, nil
+		}
+	}
+
+	return true, result
 }
 
 // compareLinesWithSpaceDiff 比较两行，检查是否为特殊行（仅空白字符差异）
@@ -759,6 +826,9 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 调试：打印接收到的内容
+	log.Printf("[DEBUG] handleTextDiff: old_content=%q, new_content=%q\n", req.OldContent, req.NewContent)
+
 	lines1 := strings.Split(req.OldContent, "\n")
 	lines2 := strings.Split(req.NewContent, "\n")
 
@@ -782,8 +852,19 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 				match[i][j] = 1 // 完全相同
 			} else if removeWhitespace(line1) == removeWhitespace(line2) && isValidSpecialLine(line1, line2) {
 				match[i][j] = 2 // 特殊行
+				// 调试：打印特殊行检测
+				log.Printf("[DEBUG] 特殊行检测: i=%d, j=%d, line1=%q, line2=%q, removeWhitespace1=%q, removeWhitespace2=%q\n",
+					i, j, line1, line2, removeWhitespace(line1), removeWhitespace(line2))
 			} else {
 				match[i][j] = 0 // 不匹配
+				// 调试：打印不匹配原因
+				if removeWhitespace(line1) != removeWhitespace(line2) {
+					log.Printf("[DEBUG] 不匹配(内容不同): i=%d, j=%d, line1=%q, line2=%q, rw1=%q, rw2=%q\n",
+						i, j, line1, line2, removeWhitespace(line1), removeWhitespace(line2))
+				} else {
+					log.Printf("[DEBUG] 不匹配(isValidSpecialLine=false): i=%d, j=%d, line1=%q, line2=%q\n",
+						i, j, line1, line2)
+				}
 			}
 		}
 	}
@@ -820,10 +901,32 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 调试：打印dp矩阵和match矩阵
+	if m <= 5 && n <= 5 {
+		log.Printf("[DEBUG] match矩阵 (m=%d,n=%d):", m, n)
+		for i := 0; i <= m; i++ {
+			row := ""
+			for j := 0; j <= n; j++ {
+				row += fmt.Sprintf("%d ", match[i][j])
+			}
+			log.Printf("[DEBUG]   match[%d]: %s", i, row)
+		}
+		log.Printf("[DEBUG] dp矩阵 (m=%d,n=%d):", m, n)
+		for i := 0; i <= m; i++ {
+			row := ""
+			for j := 0; j <= n; j++ {
+				row += fmt.Sprintf("%d ", dp[i][j])
+			}
+			log.Printf("[DEBUG]   dp[%d]: %s", i, row)
+		}
+	}
+
 	// 回溯生成diff
 	result := []TextDiffLine{}
 	i, j := m, n
 	for i > 0 || j > 0 {
+		// 调试：打印当前状态
+		log.Printf("[DEBUG] 回溯状态: i=%d, j=%d, dp[i][j]=%d, match[i][j]=%d", i, j, dp[i][j], match[i][j])
 		// 1. 完全相同的行（最高优先级）
 		if i > 0 && j > 0 && match[i][j] == 1 && dp[i][j] == dp[i-1][j-1] {
 			result = append([]TextDiffLine{{Type: "unchanged", Value: tabToSpaces(lines1[i-1])}}, result...)
@@ -834,7 +937,8 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 
 		// 2. 特殊行匹配（仅空白字符差异）
 		if i > 0 && j > 0 && match[i][j] == 2 && dp[i][j] == dp[i-1][j-1]+3 {
-			_, charDiffs := compareLinesWithSpaceDiff(lines1[i-1], lines2[j-1])
+			log.Printf("[DEBUG] 回溯选择特殊行: i=%d, j=%d, dp[i][j]=%d, dp[i-1][j-1]=%d", i, j, dp[i][j], dp[i-1][j-1])
+			_, charDiffs := compareLinesWithSpaceDiffSimple(lines1[i-1], lines2[j-1])
 			result = append([]TextDiffLine{
 				{
 					Type:      "unchanged",
