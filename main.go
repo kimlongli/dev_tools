@@ -602,6 +602,86 @@ func getCharDisplay(c rune, diffType string) string {
 	}
 }
 
+// diffWhitespaceSequences 比较两个空白字符序列，生成字符级diff
+// 使用动态规划计算最小编辑距离，匹配相同类型的空白字符
+func diffWhitespaceSequences(seq1, seq2 []rune) []CharDiff {
+	m, n := len(seq1), len(seq2)
+
+	// DP表：dp[i][j]表示seq1前i个字符和seq2前j个字符的最小编辑距离
+	dp := make([][]int, m+1)
+	ops := make([][]int, m+1) // 操作：0=匹配，1=删除seq1[i-1]，2=插入seq2[j-1]，3=替换（空白字符类型不同）
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+		ops[i] = make([]int, n+1)
+		dp[i][0] = i
+		ops[i][0] = 1 // 删除
+	}
+	for j := 1; j <= n; j++ {
+		dp[0][j] = j
+		ops[0][j] = 2 // 插入
+	}
+
+	// 填充DP表
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			c1, c2 := seq1[i-1], seq2[j-1]
+
+			if c1 == c2 {
+				// 相同字符，匹配
+				dp[i][j] = dp[i-1][j-1]
+				ops[i][j] = 0
+			} else {
+				// 计算三种操作的代价
+				delCost := dp[i-1][j] + 1
+				addCost := dp[i][j-1] + 1
+				// 替换成本：空白字符类型不同，成本为1
+				subCost := dp[i-1][j-1] + 1
+
+				// 选择最小代价
+				minCost := delCost
+				ops[i][j] = 1
+				if addCost < minCost {
+					minCost = addCost
+					ops[i][j] = 2
+				}
+				if subCost < minCost {
+					minCost = subCost
+					ops[i][j] = 3
+				}
+				dp[i][j] = minCost
+			}
+		}
+	}
+
+	// 回溯生成diff
+	result := []CharDiff{}
+	i, j := m, n
+	for i > 0 || j > 0 {
+		if i > 0 && j > 0 && ops[i][j] == 0 {
+			// 匹配
+			result = append([]CharDiff{{Type: "same", Char: getCharDisplay(seq1[i-1], "same")}}, result...)
+			i--
+			j--
+		} else if j > 0 && (i == 0 || ops[i][j] == 2) {
+			// 插入（添加）
+			result = append([]CharDiff{{Type: "space_added", Char: getCharDisplay(seq2[j-1], "space_added")}}, result...)
+			j--
+		} else if i > 0 && (j == 0 || ops[i][j] == 1) {
+			// 删除
+			result = append([]CharDiff{{Type: "space_removed", Char: getCharDisplay(seq1[i-1], "space_removed")}}, result...)
+			i--
+		} else if i > 0 && j > 0 && ops[i][j] == 3 {
+			// 替换（空白字符类型不同）
+			result = append([]CharDiff{{Type: "space_removed", Char: getCharDisplay(seq1[i-1], "space_removed")}}, result...)
+			result = append([]CharDiff{{Type: "space_added", Char: getCharDisplay(seq2[j-1], "space_added")}}, result...)
+			i--
+			j--
+		}
+	}
+
+	return result
+}
+
 // compareLinesWithSpaceDiffSimple 简单算法比较两行，检查是否为特殊行（仅空白字符差异）
 // 返回 (是否为特殊行, 字符级diff)
 func compareLinesWithSpaceDiffSimple(line1, line2 string) (bool, []CharDiff) {
@@ -637,33 +717,9 @@ func compareLinesWithSpaceDiffSimple(line1, line2 string) (bool, []CharDiff) {
 
 		// 优化空白字符显示：只标记真正的差异
 		if len(spaces1) > 0 || len(spaces2) > 0 {
-			// 计算最小公共长度
-			minLen := len(spaces1)
-			if len(spaces2) < minLen {
-				minLen = len(spaces2)
-			}
-
-			// 添加相同的空白字符
-			for k := 0; k < minLen; k++ {
-				// 如果空白字符类型相同，标记为same，否则标记为替换
-				if spaces1[k] == spaces2[k] {
-					result = append(result, CharDiff{Type: "same", Char: getCharDisplay(spaces1[k], "same")})
-				} else {
-					// 空白字符类型不同（如空格vs制表符），标记为替换
-					result = append(result, CharDiff{Type: "space_removed", Char: getCharDisplay(spaces1[k], "space_removed")})
-					result = append(result, CharDiff{Type: "space_added", Char: getCharDisplay(spaces2[k], "space_added")})
-				}
-			}
-
-			// 添加多余的空白字符（删除）
-			for k := minLen; k < len(spaces1); k++ {
-				result = append(result, CharDiff{Type: "space_removed", Char: getCharDisplay(spaces1[k], "space_removed")})
-			}
-
-			// 添加多余的空白字符（添加）
-			for k := minLen; k < len(spaces2); k++ {
-				result = append(result, CharDiff{Type: "space_added", Char: getCharDisplay(spaces2[k], "space_added")})
-			}
+			// 使用DP算法计算空白字符序列的最小编辑距离
+			seqDiff := diffWhitespaceSequences(spaces1, spaces2)
+			result = append(result, seqDiff...)
 		}
 
 		// 处理非空白字符

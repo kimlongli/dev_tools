@@ -298,8 +298,96 @@ return  result.String()
 ## 验收标准
 所有测试用例必须通过（实际结果与预期结果一致）才能交付。
 
+### 测试用例7：混合空白字符序列优化
+**描述**：测试混合空白字符序列（制表符和空格）的差异显示优化，确保只标记真正的差异，减少不必要的红绿块
+
+**问题背景**：
+- 之前算法对于"  AA"和"   AA"会显示两个红点+三个绿点，而期望显示两个相同空格+一个绿色点
+- 对于"\t  xx"和"  \txx"，期望只显示制表符的差异，中间两个空格应为公共内容
+
+**输入**：
+```text
+// old_content
+  AA
+
+// new_content
+   AA
+
+// old_content2
+\t  xx
+
+// new_content2
+  \txx
+```
+
+**预期结果**：
+1. "  AA" vs "   AA"：显示两个相同空格（same），一个添加的空格（space_added）
+2. "\t  xx" vs "  \txx"：显示删除的制表符（space_removed），两个相同空格（same），添加的制表符（space_added）
+3. 不显示多余的红绿块，只标记真正的差异部分
+
+**实际结果**：
+1. "  AA" vs "   AA"：
+   - 第一个字符：`space_added`（绿色点·）
+   - 第二、三个字符：`same`（空格）
+   - 符合预期 ✅
+2. "\t  xx" vs "  \txx"：
+   - 第一个字符：`space_removed`（红色箭头→）
+   - 第二、三个字符：`same`（空格）
+   - 第四个字符：`space_added`（绿色箭头→）
+   - 符合预期 ✅
+
+**测试输出**：
+```json
+{
+  "lines": [
+    {
+      "type": "unchanged",
+      "value": "  AA",
+      "special": true,
+      "char_diffs": [
+        {"type": "space_added", "char": "·"},
+        {"type": "same", "char": " "},
+        {"type": "same", "char": " "},
+        {"type": "same", "char": "A"},
+        {"type": "same", "char": "A"}
+      ]
+    }
+  ]
+}
+```
+
+```json
+{
+  "lines": [
+    {
+      "type": "unchanged",
+      "value": "\t  xx",
+      "special": true,
+      "char_diffs": [
+        {"type": "space_removed", "char": "→   "},
+        {"type": "same", "char": " "},
+        {"type": "same", "char": " "},
+        {"type": "space_added", "char": "→   "},
+        {"type": "same", "char": "x"},
+        {"type": "same", "char": "x"}
+      ]
+    }
+  ]
+}
+```
+
+**实现细节**：
+- 新增 `diffWhitespaceSequences` 函数，使用动态规划计算空白字符序列的最小编辑距离
+- 匹配相同类型的空白字符，优先保留公共部分
+- 替换旧的简单最小公共长度算法
+
+**状态**：✅ 通过（算法优化成功，减少不必要的红绿块）
+
+---
+
 ## 测试总结
-- ✅ **所有测试用例通过**：6/6 通过
+- ✅ **所有测试用例通过**：7/7 通过
+- ✅ **混合空白字符优化**：减少不必要的红绿块，只标记真正差异
 - ✅ **核心问题解决**：文本diff现在正确识别特殊行（仅空白字符差异）
 - ✅ **成本模型优化**：降低特殊行成本，优先匹配空白字符差异行
 - ✅ **无空白差异限制**：不再限制空白字符差异数量
