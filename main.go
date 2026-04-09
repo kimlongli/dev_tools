@@ -623,26 +623,47 @@ func compareLinesWithSpaceDiffSimple(line1, line2 string) (bool, []CharDiff) {
 	result := []CharDiff{}
 
 	for i < len(chars1) || j < len(chars2) {
-		// 跳过空白字符并记录差异
-		spaceRemoved := []rune{}
+		// 收集空白字符序列
+		spaces1 := []rune{}
 		for i < len(chars1) && isWhitespace(chars1[i]) {
-			spaceRemoved = append(spaceRemoved, chars1[i])
+			spaces1 = append(spaces1, chars1[i])
 			i++
 		}
-		spaceAdded := []rune{}
+		spaces2 := []rune{}
 		for j < len(chars2) && isWhitespace(chars2[j]) {
-			spaceAdded = append(spaceAdded, chars2[j])
+			spaces2 = append(spaces2, chars2[j])
 			j++
 		}
 
-		// 添加空白字符差异
-		// 将空白字符序列视为整体，但为了保持字符级diff，我们逐个字符添加
-		// 注意：我们保持原始顺序，但不对齐
-		for _, c := range spaceRemoved {
-			result = append(result, CharDiff{Type: "space_removed", Char: getCharDisplay(c, "space_removed")})
-		}
-		for _, c := range spaceAdded {
-			result = append(result, CharDiff{Type: "space_added", Char: getCharDisplay(c, "space_added")})
+		// 优化空白字符显示：只标记真正的差异
+		if len(spaces1) > 0 || len(spaces2) > 0 {
+			// 计算最小公共长度
+			minLen := len(spaces1)
+			if len(spaces2) < minLen {
+				minLen = len(spaces2)
+			}
+
+			// 添加相同的空白字符
+			for k := 0; k < minLen; k++ {
+				// 如果空白字符类型相同，标记为same，否则标记为替换
+				if spaces1[k] == spaces2[k] {
+					result = append(result, CharDiff{Type: "same", Char: getCharDisplay(spaces1[k], "same")})
+				} else {
+					// 空白字符类型不同（如空格vs制表符），标记为替换
+					result = append(result, CharDiff{Type: "space_removed", Char: getCharDisplay(spaces1[k], "space_removed")})
+					result = append(result, CharDiff{Type: "space_added", Char: getCharDisplay(spaces2[k], "space_added")})
+				}
+			}
+
+			// 添加多余的空白字符（删除）
+			for k := minLen; k < len(spaces1); k++ {
+				result = append(result, CharDiff{Type: "space_removed", Char: getCharDisplay(spaces1[k], "space_removed")})
+			}
+
+			// 添加多余的空白字符（添加）
+			for k := minLen; k < len(spaces2); k++ {
+				result = append(result, CharDiff{Type: "space_added", Char: getCharDisplay(spaces2[k], "space_added")})
+			}
 		}
 
 		// 处理非空白字符
