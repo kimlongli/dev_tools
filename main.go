@@ -496,6 +496,12 @@ func isValidSpecialLine(line1, line2 string) bool {
 	return true
 }
 
+// isBracketOnlyLine 检查一行是否只有括号（可能带有前导空白）
+func isBracketOnlyLine(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	return len(trimmed) == 1 && (trimmed == "{" || trimmed == "}")
+}
+
 // countLeadingWhitespace 计算字符串开头连续空白字符的数量
 func countLeadingWhitespace(s string) int {
 	count := 0
@@ -946,21 +952,33 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 计算编辑距离矩阵（使用乘以2的因子：完全匹配=0，删除/添加=2，特殊行=2，替换=4）
+	// 计算编辑距离矩阵（使用乘以2的因子：完全匹配=0，删除/添加=3，特殊行=2，替换=10）
+	// 成本设计原则：特殊行 < 删除/添加 < 替换，使得在变更行数相同时优先选择特殊行
 	dp := make([][]int, m+1)
 	for i := range dp {
 		dp[i] = make([]int, n+1)
-		dp[i][0] = i * 2 // 删除成本为2（乘以2后）
+		dp[i][0] = i * 3 // 删除成本为3（乘以2后）
 	}
 	for j := 1; j <= n; j++ {
-		dp[0][j] = j * 2 // 添加成本为2（乘以2后）
+		dp[0][j] = j * 3 // 添加成本为3（乘以2后）
 	}
 
 	for i := 1; i <= m; i++ {
 		for j := 1; j <= n; j++ {
 			if match[i][j] == 1 {
 				// 完全相同的行：成本0（乘以2后）
-				dp[i][j] = dp[i-1][j-1]
+				// 但对于括号行，增加位置惩罚以避免错误匹配不同作用域的括号
+				cost := dp[i-1][j-1]
+				line1, line2 := lines1[i-1], lines2[j-1]
+				if isBracketOnlyLine(line1) && isBracketOnlyLine(line2) {
+					posDiff := i - j
+					if posDiff < 0 {
+						posDiff = -posDiff
+					}
+					// 对于括号行，增加惩罚以避免错误匹配不同作用域的括号
+					cost += 2
+				}
+				dp[i][j] = cost
 			} else if match[i][j] == 2 {
 				// 特殊行（仅空白字符差异）：成本1.5（乘以2后为3）
 				// 增加位置惩罚：位置差越大，成本越高
@@ -968,13 +986,45 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 				if posDiff < 0 {
 					posDiff = -posDiff
 				}
-				positionPenalty := posDiff * 2 // 每行位置差增加2成本
-				dp[i][j] = dp[i-1][j-1] + 3 + positionPenalty
+				positionPenalty := posDiff // 每行位置差增加1成本
+				// 对于括号行，增加额外惩罚以避免错误匹配不同作用域的括号
+				// 基于缩进差异：缩进差异越大，惩罚越大
+				bracketPenalty := 0
+				line1, line2 := lines1[i-1], lines2[j-1]
+				if isBracketOnlyLine(line1) && isBracketOnlyLine(line2) {
+					// 计算缩进差异
+					indent1 := countLeadingWhitespaceVisual(line1)
+					indent2 := countLeadingWhitespaceVisual(line2)
+					indentDiff := indent1 - indent2
+					if indentDiff < 0 {
+						indentDiff = -indentDiff
+					}
+					// 缩进差异每2个单位增加1点惩罚，再加1点基础惩罚
+					// 这使得不同缩进级别的括号行更难匹配为特殊行
+					bracketPenalty = indentDiff/2 + 1
+					// 最大惩罚为8
+					if bracketPenalty > 8 {
+						bracketPenalty = 8
+					}
+				}
+				specialCost := dp[i-1][j-1] + 3 + positionPenalty + bracketPenalty
+				// 与其他操作比较，取最小成本
+				minVal := dp[i-1][j] + 3 // 删除成本
+				if dp[i][j-1]+3 < minVal {
+					minVal = dp[i][j-1] + 3 // 添加成本
+				}
+				if dp[i-1][j-1]+8 < minVal {
+					minVal = dp[i-1][j-1] + 8 // 替换成本
+				}
+				if specialCost < minVal {
+					minVal = specialCost
+				}
+				dp[i][j] = minVal
 			} else {
 				// 不匹配：计算最小编辑距离
-				minVal := dp[i-1][j] + 2 // 删除成本2（乘以2后）
-				if dp[i][j-1]+2 < minVal {
-					minVal = dp[i][j-1] + 2 // 添加成本2（乘以2后）
+				minVal := dp[i-1][j] + 3 // 删除成本3（乘以2后）
+				if dp[i][j-1]+3 < minVal {
+					minVal = dp[i][j-1] + 3 // 添加成本3（乘以2后）
 				}
 				if dp[i-1][j-1]+8 < minVal {
 					minVal = dp[i-1][j-1] + 8 // 替换成本4（乘以2后为8）
@@ -985,7 +1035,8 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 调试：打印dp矩阵和match矩阵
-	if m <= 5 && n <= 5 {
+	debugEnabled := os.Getenv("DEBUG_DIFF") != ""
+	if debugEnabled || (m <= 10 && n <= 10) {
 		log.Printf("[DEBUG] match矩阵 (m=%d,n=%d):", m, n)
 		for i := 0; i <= m; i++ {
 			row := ""
@@ -1011,7 +1062,7 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 		// 调试：打印当前状态
 		log.Printf("[DEBUG] 回溯状态: i=%d, j=%d, dp[i][j]=%d, match[i][j]=%d", i, j, dp[i][j], match[i][j])
 		// 1. 完全相同的行（最高优先级）
-		if i > 0 && j > 0 && match[i][j] == 1 && dp[i][j] == dp[i-1][j-1] {
+		if i > 0 && j > 0 && match[i][j] == 1 {
 			result = append([]TextDiffLine{{Type: "unchanged", Value: tabToSpaces(lines1[i-1])}}, result...)
 			i--
 			j--
@@ -1019,31 +1070,57 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 2. 特殊行匹配（仅空白字符差异）
-		if i > 0 && j > 0 && match[i][j] == 2 && dp[i][j] == dp[i-1][j-1]+3 {
-			log.Printf("[DEBUG] 回溯选择特殊行: i=%d, j=%d, dp[i][j]=%d, dp[i-1][j-1]=%d", i, j, dp[i][j], dp[i-1][j-1])
-			_, charDiffs := compareLinesWithSpaceDiffSimple(lines1[i-1], lines2[j-1])
-			result = append([]TextDiffLine{
-				{
-					Type:      "unchanged",
-					Value:     tabToSpaces(lines1[i-1]),
-					Special:   true,
-					CharDiffs: charDiffs,
-				},
-			}, result...)
-			i--
-			j--
-			continue
+		if i > 0 && j > 0 && match[i][j] == 2 {
+			posDiff := i - j
+			if posDiff < 0 {
+				posDiff = -posDiff
+			}
+			// 重新计算括号惩罚以与dp计算匹配
+			bracketPenalty := 0
+			line1, line2 := lines1[i-1], lines2[j-1]
+			if isBracketOnlyLine(line1) && isBracketOnlyLine(line2) {
+				// 计算缩进差异
+				indent1 := countLeadingWhitespaceVisual(line1)
+				indent2 := countLeadingWhitespaceVisual(line2)
+				indentDiff := indent1 - indent2
+				if indentDiff < 0 {
+					indentDiff = -indentDiff
+				}
+				// 缩进差异每2个单位增加1点惩罚，再加1点基础惩罚
+				// 这使得不同缩进级别的括号行更难匹配为特殊行
+				bracketPenalty = indentDiff/2 + 1
+				// 最大惩罚为8
+				if bracketPenalty > 8 {
+					bracketPenalty = 8
+				}
+			}
+			expectedCost := dp[i-1][j-1] + 3 + posDiff + bracketPenalty
+			if dp[i][j] == expectedCost {
+				log.Printf("[DEBUG] 回溯选择特殊行: i=%d, j=%d, dp[i][j]=%d, dp[i-1][j-1]=%d, posDiff=%d, bracketPenalty=%d", i, j, dp[i][j], dp[i-1][j-1], posDiff, bracketPenalty)
+				_, charDiffs := compareLinesWithSpaceDiffSimple(lines1[i-1], lines2[j-1])
+				result = append([]TextDiffLine{
+					{
+						Type:      "unchanged",
+						Value:     tabToSpaces(lines1[i-1]),
+						Special:   true,
+						CharDiffs: charDiffs,
+					},
+				}, result...)
+				i--
+				j--
+				continue
+			}
 		}
 
 		// 3. 删除操作
-		if i > 0 && (j == 0 || dp[i][j] == dp[i-1][j]+2) {
+		if i > 0 && (j == 0 || dp[i][j] == dp[i-1][j]+3) {
 			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
 			i--
 			continue
 		}
 
 		// 4. 添加操作
-		if j > 0 && (i == 0 || dp[i][j] == dp[i][j-1]+2) {
+		if j > 0 && (i == 0 || dp[i][j] == dp[i][j-1]+3) {
 			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
 			j--
 			continue

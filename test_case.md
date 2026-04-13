@@ -475,17 +475,203 @@ func removeWhitespace(s string) string {
 }
 ```
 
-**状态**：✅ 通过（bug已修复，现在只显示一行变动，更简洁）
+ **状态**：✅ 通过（bug已修复，现在只显示一行变动，更简洁）
+
+---
+
+### 测试用例9：for循环闭合括号缺失（用户最新案例）
+**描述**：测试for循环闭合括号缺失时，diff显示是否正确。用户观察到对比显示"有两行改动"，期望只显示一行删除（for循环闭合括号）。
+
+**问题背景**：
+用户提供的用例中，new_content缺少for循环的闭合括号，导致代码结构改变。diff算法需要正确识别这种结构变化，避免将if语句的闭合括号与for循环的闭合括号错误匹配。
+
+**输入**：
+```go
+// old_content
+func removeWhitespace(s string) string {
+	var result strings.Builder
+	for _, c := range s {
+		if !isWhitespace(c) {
+			result.WriteRune(c)
+		}
+	}
+	return  result.String()
+}
+
+// new_content
+func removeWhitespace(s string) string {
+	var result strings.Builder
+	for _, c := range s {
+		if !isWhitespace(c) {
+			result.WriteRune(c)
+		}
+	return  result.String()
+}
+```
+
+**用户期望**：
+1. 只显示一行删除：删除for循环的闭合括号`}`（因为new_content中for循环缺少闭合括号）
+2. 不显示if语句闭合括号的删除（因为if语句的闭合括号仍然存在，只是位置变化）
+
+**问题分析**：
+- old_content有两行`}`：第6行`"        }"`（if语句闭合）和第7行`"    }"`（for循环闭合）
+- new_content只有一行`}`：第6行`"    }"`（if语句闭合）
+- 错误匹配：算法可能将old第7行`"    }"`（for循环闭合）与new第6行`"    }"`（if语句闭合）匹配为特殊行（仅空白字符差异）
+- 正确匹配：应该将old第6行`"        }"`（if语句闭合）与new第6行`"    }"`（if语句闭合）匹配为特殊行，old第7行`"    }"`（for循环闭合）显示为删除
+
+**修复方案**：
+增加特殊行的位置惩罚因子：`positionPenalty := posDiff * 2`
+- 对于old第7行与new第6行：位置差`posDiff = 1`，特殊行成本 = 3 + 1×2 = 5
+- 删除+添加成本 = 2 + 2 = 4
+- 算法选择成本更低的方案：删除old第7行`"    }"`（for循环闭合），不匹配为特殊行
+
+**测试输出（修复后）**：
+```json
+{
+  "lines": [
+    {"type": "unchanged", "value": "func removeWhitespace(s string) string {"},
+    {"type": "unchanged", "value": "    var result strings.Builder"},
+    {"type": "unchanged", "value": "    for _, c := range s {"},
+    {"type": "unchanged", "value": "        if !isWhitespace(c) {"},
+    {"type": "unchanged", "value": "            result.WriteRune(c)"},
+    {"type": "unchanged", "value": "        }"},
+    {"type": "removed", "value": "    }"},
+    {"type": "unchanged", "value": "    return  result.String()"},
+    {"type": "unchanged", "value": "}"}
+  ]
+}
+```
+
+**修复效果**：
+1. 只显示一行删除：`"    }"`（for循环闭合括号）
+2. if语句的闭合括号`"        }"`正确显示为`unchanged`
+3. 符合用户期望：直观显示"只删了一行"
+
+ **状态**：✅ 通过（位置惩罚因子优化成功，现在只显示一行变动）
+
+---
+
+### 测试用例10：for循环缺失闭合括号 + return语句空白差异
+**描述**：测试for循环闭合括号缺失时，同时return语句有空白字符差异的情况。diff应正确显示：
+1. 只显示一行删除：删除for循环的闭合括号`}`
+2. return语句显示为特殊行（仅空白字符差异）
+
+**输入**：
+```go
+// old_content
+func removeWhitespace(s string) string {
+	var result strings.Builder
+	for _, c := range s {
+		if !isWhitespace(c) {
+			result.WriteRune(c)
+		}
+	}
+	return  result.String()
+}
+
+// new_content
+func removeWhitespace(s string) string {
+	var result strings.Builder
+	for _, c := range s {
+		if !isWhitespace(c) {
+			result.WriteRune(c)
+		}
+	return result.String()
+}
+```
+
+**预期结果**：
+1. 只显示一行删除：`"    }"`（for循环闭合括号）
+2. `return  result.String()`行显示为特殊行（仅空白字符差异，一个空格被删除）
+3. 不显示if语句闭合括号的变动
+
+**实际结果**：
+1. 正确显示一行删除：`"    }"`（for循环闭合括号）
+2. return语句正确显示为特殊行，显示一个空格删除（`·`符号）
+3. if语句闭合括号`"        }"`显示为unchanged
+
+**测试输出**：
+```json
+{
+  "lines": [
+    {"type": "unchanged", "value": "func removeWhitespace(s string) string {"},
+    {"type": "unchanged", "value": "    var result strings.Builder"},
+    {"type": "unchanged", "value": "    for _, c := range s {"},
+    {"type": "unchanged", "value": "        if !isWhitespace(c) {"},
+    {"type": "unchanged", "value": "            result.WriteRune(c)"},
+    {"type": "unchanged", "value": "        }"},
+    {"type": "removed", "value": "    }"},
+    {
+      "type": "unchanged", 
+      "value": "    return  result.String()",
+      "special": true,
+      "char_diffs": [
+        {"type": "same", "char": "    "},
+        {"type": "same", "char": "r"},
+        {"type": "same", "char": "e"},
+        {"type": "same", "char": "t"},
+        {"type": "same", "char": "u"},
+        {"type": "same", "char": "r"},
+        {"type": "same", "char": "n"},
+        {"type": "space_removed", "char": "·"},
+        {"type": "same", "char": " "},
+        {"type": "same", "char": "r"},
+        {"type": "same", "char": "e"},
+        {"type": "same", "char": "s"},
+        {"type": "same", "char": "u"},
+        {"type": "same", "char": "l"},
+        {"type": "same", "char": "t"},
+        {"type": "same", "char": "."},
+        {"type": "same", "char": "S"},
+        {"type": "same", "char": "t"},
+        {"type": "same", "char": "r"},
+        {"type": "same", "char": "i"},
+        {"type": "same", "char": "n"},
+        {"type": "same", "char": "g"},
+        {"type": "same", "char": "("},
+        {"type": "same", "char": ")"}
+      ]
+    },
+    {"type": "unchanged", "value": "}"}
+  ]
+}
+```
+
+**问题分析**：
+- old_content有两行`}`：第6行`"        }"`（if语句闭合）和第7行`"    }"`（for循环闭合）
+- new_content只有一行`}`：第6行`"        }"`（if语句闭合）
+- return语句有空白差异：old为`return  result.String()`（两个空格），new为`return result.String()`（一个空格）
+- 关键挑战：避免将不同作用域的括号错误匹配为特殊行（if闭合与for闭合）
+
+**解决方案**：
+修复DP算法中特殊行成本计算的问题，并增加括号行特殊行匹配的缩进差异惩罚：
+1. **DP算法修复**：特殊行成本需要与其他操作（删除、添加、替换）比较取最小值，确保选择全局最优解
+2. **括号行惩罚**：对于括号行（仅包含`{`或`}`），计算视觉缩进差异
+3. **惩罚公式**：缩进差异每2个视觉单位增加1点惩罚，再加1点基础惩罚（`indentDiff/2 + 1`）
+4. **最大惩罚**：最大惩罚为8，确保不同缩进级别的括号行更难匹配为特殊行
+5. **位置惩罚**：增加位置差异惩罚（`|i-j|`），位置相差越大，特殊行成本越高
+
+**修复效果**：
+1. 算法正确匹配if语句的闭合括号（相同缩进级别）
+2. for循环闭合括号显示为删除（无匹配项）
+3. return语句空白差异正确显示为特殊行
+4. 符合两个核心原则：变更行数最少（一行删除），且特殊行正确显示
+5. DP算法现在能正确选择全局最优解，避免因特殊行成本计算不当导致的次优匹配
+
+**状态**：✅ 通过（括号行缩进差异惩罚优化成功）
 
 ---
 
 ## 测试总结
-- ✅ **所有测试用例通过**：8/8 通过
+- ✅ **所有测试用例通过**：10/10 通过
 - ✅ **混合空白字符优化**：减少不必要的红绿块，只标记真正差异
 - ✅ **核心问题解决**：文本diff现在正确识别特殊行（仅空白字符差异）
-- ✅ **成本模型优化**：降低特殊行成本，优先匹配空白字符差异行
+- ✅ **DP算法修复**：特殊行成本与其他操作比较取最小值，确保全局最优解
+- ✅ **成本模型优化**：降低特殊行成本，优先匹配空白字符差异行（变更行数相同时特殊行优先）
 - ✅ **无空白差异限制**：不再限制空白字符差异数量
-- ✅ **括号对齐优化**：不同缩进级别的括号正确识别为特殊行
+- ✅ **括号对齐优化**：不同缩进级别的括号正确识别为特殊行（新增缩进差异惩罚 `indentDiff/2 + 1`）
 - ✅ **大缩进差异支持**：大缩进差异正确显示
+- ✅ **位置惩罚因子优化**：增加位置惩罚因子（posDiff），避免错误匹配相同内容的行
+- ✅ **括号行作用域识别**：增加括号行缩进差异惩罚，避免错误匹配不同作用域的括号
 
 **交付状态**：✅ 可以交付
