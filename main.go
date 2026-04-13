@@ -3,12 +3,15 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 type Snapshot struct {
@@ -141,6 +144,27 @@ type CsvDiffRequest struct {
 	NewContent string `json:"NewContent"`
 }
 
+type TextDiffRequest struct {
+	OldContent string `json:"old_content"`
+	NewContent string `json:"new_content"`
+}
+
+type CharDiff struct {
+	Type string `json:"type"` // "same", "space_added", "space_removed"
+	Char string `json:"char"` // 字符（空白字符显示为符号）
+}
+
+type TextDiffLine struct {
+	Type      string     `json:"type"`                 // "added", "removed", "unchanged"
+	Value     string     `json:"value"`                // 原始行内容
+	Special   bool       `json:"special,omitempty"`    // 是否为特殊行（仅空白字符差异）
+	CharDiffs []CharDiff `json:"char_diffs,omitempty"` // 字符级diff（仅特殊行有）
+}
+
+type TextDiffResponse struct {
+	Lines []TextDiffLine `json:"lines"`
+}
+
 type CellDiff struct {
 	Type int    `json:"type"`
 	Line string `json:"line"`
@@ -178,6 +202,7 @@ func main() {
 	mux.HandleFunc("/api/list-dir", handleListDir)
 	mux.HandleFunc("/api/home-dir", handleHomeDir)
 	mux.HandleFunc("/api/csv-diff", handleCsvDiff)
+	mux.HandleFunc("/api/text-diff", handleTextDiff)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -425,6 +450,659 @@ func handleCsvDiff(w http.ResponseWriter, r *http.Request) {
 		Columns: columns,
 		Rows:    rows,
 	})
+}
+
+// isWhitespace 检查字符是否为空白字符
+func isWhitespace(c rune) bool {
+	return unicode.IsSpace(c)
+}
+
+// removeWhitespace 移除字符串中的所有空白字符
+func removeWhitespace(s string) string {
+	var result strings.Builder
+	for _, c := range s {
+		if !isWhitespace(c) {
+			result.WriteRune(c)
+		}
+	}
+	return result.String()
+}
+
+// tabToSpaces 将制表符转换为4个空格
+func tabToSpaces(s string) string {
+	return strings.ReplaceAll(s, "\t", "    ")
+}
+
+// isValidSpecialLine 检查两行是否适合作为特殊行（仅空白字符差异）
+// 返回true如果两行适合作为特殊行匹配
+func isValidSpecialLine(line1, line2 string) bool {
+	// 通用文本diff基本检查：空行与非空行不匹配为特殊行
+	if (line1 == "" && line2 != "") || (line1 != "" && line2 == "") {
+		return false
+	}
+
+	// 检查是否一行只有空白字符而另一行不是
+	// 例如："    "（只有空格）与"    }"不应匹配为特殊行
+	if strings.TrimSpace(line1) == "" && strings.TrimSpace(line2) != "" {
+		return false
+	}
+	if strings.TrimSpace(line1) != "" && strings.TrimSpace(line2) == "" {
+		return false
+	}
+
+	// 如果去掉空白字符后内容相同，则认为是特殊行（仅空白字符差异）
+	// 不再限制前导空白差异大小，因为这是通用文本diff功能
+	// 对齐问题由LCS算法处理，而不是在这里限制
+	return true
+}
+
+// isBracketOnlyLine 检查一行是否只有括号（可能带有前导空白）
+func isBracketOnlyLine(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	return len(trimmed) == 1 && (trimmed == "{" || trimmed == "}")
+}
+
+// countLeadingWhitespace 计算字符串开头连续空白字符的数量
+func countLeadingWhitespace(s string) int {
+	count := 0
+	for _, c := range s {
+		if isWhitespace(c) {
+			count++
+		} else {
+			break
+		}
+	}
+	return count
+}
+
+// countLeadingWhitespaceVisual 计算字符串开头连续空白字符的视觉宽度
+// 空格=1，制表符=4（标准制表位）
+func countLeadingWhitespaceVisual(s string) int {
+	width := 0
+	for _, c := range s {
+		if c == ' ' {
+			width += 1
+		} else if c == '\t' {
+			width += 4
+		} else if isWhitespace(c) {
+			// 其他空白字符视为1宽度
+			width += 1
+		} else {
+			break
+		}
+	}
+	return width
+}
+
+// abs 返回整数的绝对值
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// whitespaceToSymbol 将空白字符转换为可见符号（不带填充）
+func whitespaceToSymbol(c rune) string {
+	switch c {
+	case ' ':
+		return "·"
+	case '\t':
+		return "→"
+	case '\r':
+		return "↵"
+	case '\n':
+		return "↵"
+	case '\f':
+		return "↓"
+	case '\v':
+		return "↕"
+	case '\u00A0': // 不间断空格
+		return "␣"
+	default:
+		// 其他Unicode空白字符使用开放方框符号
+		return "␣"
+	}
+}
+
+// getCharDisplay 根据字符类型和差异状态返回显示字符串
+func getCharDisplay(c rune, diffType string) string {
+	// diffType 可以是: "same", "space_added", "space_removed"
+	isSpace := isWhitespace(c)
+	isDiff := diffType == "space_added" || diffType == "space_removed"
+
+	if !isSpace {
+		// 非空白字符直接返回
+		return string(c)
+	}
+
+	if !isDiff {
+		// 相同的空白字符
+		switch c {
+		case ' ':
+			return " "
+		case '\t':
+			// 相同制表符显示为4个空格
+			return "    "
+		case '\r', '\n':
+			// 换行符不应该出现在行内字符diff中，但为了完整性
+			return string(c)
+		default:
+			// 其他空白字符显示为1个空格
+			return " "
+		}
+	} else {
+		// 差异的空白字符
+		switch c {
+		case ' ':
+			// 差异空格显示为符号，不填充
+			return "·"
+		case '\t':
+			// 差异制表符显示为符号+3个空格，共4字符宽度
+			return "→   "
+		case '\r', '\n':
+			return whitespaceToSymbol(c)
+		default:
+			return whitespaceToSymbol(c)
+		}
+	}
+}
+
+// diffWhitespaceSequences 比较两个空白字符序列，生成字符级diff
+// 使用动态规划计算最小编辑距离，匹配相同类型的空白字符
+func diffWhitespaceSequences(seq1, seq2 []rune) []CharDiff {
+	m, n := len(seq1), len(seq2)
+
+	// DP表：dp[i][j]表示seq1前i个字符和seq2前j个字符的最小编辑距离
+	dp := make([][]int, m+1)
+	ops := make([][]int, m+1) // 操作：0=匹配，1=删除seq1[i-1]，2=插入seq2[j-1]，3=替换（空白字符类型不同）
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+		ops[i] = make([]int, n+1)
+		dp[i][0] = i
+		ops[i][0] = 1 // 删除
+	}
+	for j := 1; j <= n; j++ {
+		dp[0][j] = j
+		ops[0][j] = 2 // 插入
+	}
+
+	// 填充DP表
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			c1, c2 := seq1[i-1], seq2[j-1]
+
+			if c1 == c2 {
+				// 相同字符，匹配
+				dp[i][j] = dp[i-1][j-1]
+				ops[i][j] = 0
+			} else {
+				// 计算三种操作的代价
+				delCost := dp[i-1][j] + 1
+				addCost := dp[i][j-1] + 1
+				// 替换成本：空白字符类型不同，成本为1
+				subCost := dp[i-1][j-1] + 1
+
+				// 选择最小代价
+				minCost := delCost
+				ops[i][j] = 1
+				if addCost < minCost {
+					minCost = addCost
+					ops[i][j] = 2
+				}
+				if subCost < minCost {
+					minCost = subCost
+					ops[i][j] = 3
+				}
+				dp[i][j] = minCost
+			}
+		}
+	}
+
+	// 回溯生成diff
+	result := []CharDiff{}
+	i, j := m, n
+	for i > 0 || j > 0 {
+		if i > 0 && j > 0 && ops[i][j] == 0 {
+			// 匹配
+			result = append([]CharDiff{{Type: "same", Char: getCharDisplay(seq1[i-1], "same")}}, result...)
+			i--
+			j--
+		} else if j > 0 && (i == 0 || ops[i][j] == 2) {
+			// 插入（添加）
+			result = append([]CharDiff{{Type: "space_added", Char: getCharDisplay(seq2[j-1], "space_added")}}, result...)
+			j--
+		} else if i > 0 && (j == 0 || ops[i][j] == 1) {
+			// 删除
+			result = append([]CharDiff{{Type: "space_removed", Char: getCharDisplay(seq1[i-1], "space_removed")}}, result...)
+			i--
+		} else if i > 0 && j > 0 && ops[i][j] == 3 {
+			// 替换（空白字符类型不同）
+			result = append([]CharDiff{{Type: "space_removed", Char: getCharDisplay(seq1[i-1], "space_removed")}}, result...)
+			result = append([]CharDiff{{Type: "space_added", Char: getCharDisplay(seq2[j-1], "space_added")}}, result...)
+			i--
+			j--
+		}
+	}
+
+	return result
+}
+
+// compareLinesWithSpaceDiffSimple 简单算法比较两行，检查是否为特殊行（仅空白字符差异）
+// 返回 (是否为特殊行, 字符级diff)
+func compareLinesWithSpaceDiffSimple(line1, line2 string) (bool, []CharDiff) {
+	// 去掉空白后比较
+	if removeWhitespace(line1) != removeWhitespace(line2) {
+		return false, nil
+	}
+
+	// 去掉空白后相同，检查原始行是否相同
+	if line1 == line2 {
+		// 完全相同的行，不是特殊行（因为没有任何差异）
+		return false, nil
+	}
+
+	// 特殊行：仅空白字符差异，生成字符级diff
+	chars1 := []rune(line1)
+	chars2 := []rune(line2)
+	i, j := 0, 0
+	result := []CharDiff{}
+
+	for i < len(chars1) || j < len(chars2) {
+		// 收集空白字符序列
+		spaces1 := []rune{}
+		for i < len(chars1) && isWhitespace(chars1[i]) {
+			spaces1 = append(spaces1, chars1[i])
+			i++
+		}
+		spaces2 := []rune{}
+		for j < len(chars2) && isWhitespace(chars2[j]) {
+			spaces2 = append(spaces2, chars2[j])
+			j++
+		}
+
+		// 优化空白字符显示：只标记真正的差异
+		if len(spaces1) > 0 || len(spaces2) > 0 {
+			// 使用DP算法计算空白字符序列的最小编辑距离
+			seqDiff := diffWhitespaceSequences(spaces1, spaces2)
+			result = append(result, seqDiff...)
+		}
+
+		// 处理非空白字符
+		if i < len(chars1) && j < len(chars2) {
+			// 根据前提，非空白字符必须相同
+			if chars1[i] != chars2[j] {
+				// 不应该发生，但以防万一
+				return false, nil
+			}
+			result = append(result, CharDiff{Type: "same", Char: getCharDisplay(chars1[i], "same")})
+			i++
+			j++
+		} else if i < len(chars1) || j < len(chars2) {
+			// 一个字符串有额外非空白字符？不应该发生
+			return false, nil
+		}
+	}
+
+	return true, result
+}
+
+// compareLinesWithSpaceDiff 比较两行，检查是否为特殊行（仅空白字符差异）
+// 返回 (是否为特殊行, 字符级diff)
+func compareLinesWithSpaceDiff(line1, line2 string) (bool, []CharDiff) {
+	// 去掉空白后比较
+	if removeWhitespace(line1) != removeWhitespace(line2) {
+		return false, nil
+	}
+
+	// 去掉空白后相同，检查原始行是否相同
+	if line1 == line2 {
+		// 完全相同的行，不是特殊行（因为没有任何差异）
+		return false, nil
+	}
+
+	// 特殊行：仅空白字符差异，生成字符级diff
+	chars1 := []rune(line1)
+	chars2 := []rune(line2)
+	m, n := len(chars1), len(chars2)
+
+	// 使用LCS算法计算字符级diff，但将空白字符视为可互换
+	dp := make([][]int, m+1)
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+		dp[i][0] = i
+	}
+	for j := 1; j <= n; j++ {
+		dp[0][j] = j
+	}
+
+	// 同时记录操作类型：0=匹配，1=删除，2=添加，3=替换
+	ops := make([][]int, m+1)
+	for i := range ops {
+		ops[i] = make([]int, n+1)
+	}
+
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			c1, c2 := chars1[i-1], chars2[j-1]
+
+			// 检查是否匹配
+			matched := false
+			if c1 == c2 {
+				matched = true
+			} else if isWhitespace(c1) && isWhitespace(c2) {
+				// 两个都是空白字符，但类型不同，视为替换
+				matched = false
+			}
+
+			if matched {
+				dp[i][j] = dp[i-1][j-1]
+				ops[i][j] = 0 // 匹配
+			} else {
+				// 计算最小编辑距离
+				delCost := dp[i-1][j] + 1
+				addCost := dp[i][j-1] + 1
+				// 替换成本：如果都是空白字符，成本为1（替换空白字符），否则成本为1（替换字符）
+				subCost := dp[i-1][j-1] + 1
+
+				minCost := delCost
+				ops[i][j] = 1 // 删除
+
+				if addCost < minCost {
+					minCost = addCost
+					ops[i][j] = 2 // 添加
+				}
+				if subCost < minCost {
+					minCost = subCost
+					ops[i][j] = 3 // 替换
+				}
+
+				dp[i][j] = minCost
+			}
+		}
+	}
+
+	// 回溯生成diff
+	result := []CharDiff{}
+	i, j := m, n
+	for i > 0 || j > 0 {
+		if i > 0 && j > 0 && ops[i][j] == 0 {
+			// 匹配
+			c := chars1[i-1]
+			charType := "same"
+			result = append([]CharDiff{{Type: charType, Char: getCharDisplay(c, charType)}}, result...)
+			i--
+			j--
+		} else if j > 0 && (i == 0 || ops[i][j] == 2) {
+			// 添加的字符
+			c := chars2[j-1]
+			charType := "same"
+			if isWhitespace(c) {
+				charType = "space_added"
+			}
+			result = append([]CharDiff{{Type: charType, Char: getCharDisplay(c, charType)}}, result...)
+			j--
+		} else if i > 0 && (j == 0 || ops[i][j] == 1) {
+			// 删除的字符
+			c := chars1[i-1]
+			charType := "same"
+			if isWhitespace(c) {
+				charType = "space_removed"
+			}
+			result = append([]CharDiff{{Type: charType, Char: getCharDisplay(c, charType)}}, result...)
+			i--
+		} else if i > 0 && j > 0 && ops[i][j] == 3 {
+			// 替换操作（字符不同）
+			c1, c2 := chars1[i-1], chars2[j-1]
+			// 由于我们知道去掉空白后内容相同，所以至少有一个是空白字符
+			var type1, type2 string
+			if isWhitespace(c1) {
+				type1 = "space_removed"
+			} else {
+				type1 = "same"
+			}
+			if isWhitespace(c2) {
+				type2 = "space_added"
+			} else {
+				type2 = "same"
+			}
+			result = append([]CharDiff{{Type: type1, Char: getCharDisplay(c1, type1)}}, result...)
+			result = append([]CharDiff{{Type: type2, Char: getCharDisplay(c2, type2)}}, result...)
+			i--
+			j--
+		} else {
+			// 回退策略
+			if i > 0 {
+				c := chars1[i-1]
+				charType := "same"
+				if isWhitespace(c) {
+					charType = "space_removed"
+				}
+				result = append([]CharDiff{{Type: charType, Char: getCharDisplay(c, charType)}}, result...)
+				i--
+			} else if j > 0 {
+				c := chars2[j-1]
+				charType := "same"
+				if isWhitespace(c) {
+					charType = "space_added"
+				}
+				result = append([]CharDiff{{Type: charType, Char: getCharDisplay(c, charType)}}, result...)
+				j--
+			}
+		}
+	}
+
+	return true, result
+}
+
+func handleTextDiff(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req TextDiffRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	// 调试：打印接收到的内容
+	log.Printf("[DEBUG] handleTextDiff: old_content=%q, new_content=%q\n", req.OldContent, req.NewContent)
+
+	lines1 := strings.Split(req.OldContent, "\n")
+	lines2 := strings.Split(req.NewContent, "\n")
+
+	m := len(lines1)
+	n := len(lines2)
+
+	// 预计算行匹配信息
+	// match[i][j]表示lines1[i-1]和lines2[j-1]的匹配类型：
+	// 0: 不匹配
+	// 1: 完全相同
+	// 2: 特殊行（仅空白字符差异）
+	match := make([][]int, m+1)
+	for i := range match {
+		match[i] = make([]int, n+1)
+	}
+
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			line1, line2 := lines1[i-1], lines2[j-1]
+			if line1 == line2 {
+				match[i][j] = 1 // 完全相同
+			} else if removeWhitespace(line1) == removeWhitespace(line2) && isValidSpecialLine(line1, line2) {
+				match[i][j] = 2 // 特殊行
+				// 调试：打印特殊行检测
+				log.Printf("[DEBUG] 特殊行检测: i=%d, j=%d, line1=%q, line2=%q, removeWhitespace1=%q, removeWhitespace2=%q\n",
+					i, j, line1, line2, removeWhitespace(line1), removeWhitespace(line2))
+			} else {
+				match[i][j] = 0 // 不匹配
+				// 调试：打印不匹配原因
+				if removeWhitespace(line1) != removeWhitespace(line2) {
+					log.Printf("[DEBUG] 不匹配(内容不同): i=%d, j=%d, line1=%q, line2=%q, rw1=%q, rw2=%q\n",
+						i, j, line1, line2, removeWhitespace(line1), removeWhitespace(line2))
+				} else {
+					log.Printf("[DEBUG] 不匹配(isValidSpecialLine=false): i=%d, j=%d, line1=%q, line2=%q\n",
+						i, j, line1, line2)
+				}
+			}
+		}
+	}
+
+	// 计算编辑距离矩阵（使用乘以2的因子：完全匹配=0，删除/添加=3，特殊行=2，替换=10）
+	// 成本设计原则：特殊行 < 删除/添加 < 替换，使得在变更行数相同时优先选择特殊行
+	dp := make([][]int, m+1)
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+		dp[i][0] = i * 3 // 删除成本为3（乘以2后）
+	}
+	for j := 1; j <= n; j++ {
+		dp[0][j] = j * 3 // 添加成本为3（乘以2后）
+	}
+
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			if match[i][j] == 1 {
+				// 完全相同的行：成本0（乘以2后）
+				// 移除括号惩罚：普通文本diff功能，不需要考虑括号
+				dp[i][j] = dp[i-1][j-1]
+			} else if match[i][j] == 2 {
+				// 特殊行（仅空白字符差异）：成本1.5（乘以2后为3）
+				// 增加位置惩罚：位置差越大，成本越高
+				posDiff := i - j
+				if posDiff < 0 {
+					posDiff = -posDiff
+				}
+				positionPenalty := posDiff // 每行位置差增加1成本
+				// 移除括号惩罚：普通文本diff功能，不需要考虑括号
+				bracketPenalty := 0
+				specialCost := dp[i-1][j-1] + 3 + positionPenalty + bracketPenalty
+				// 与其他操作比较，取最小成本
+				minVal := dp[i-1][j] + 3 // 删除成本
+				if dp[i][j-1]+3 < minVal {
+					minVal = dp[i][j-1] + 3 // 添加成本
+				}
+				if dp[i-1][j-1]+8 < minVal {
+					minVal = dp[i-1][j-1] + 8 // 替换成本
+				}
+				if specialCost < minVal {
+					minVal = specialCost
+				}
+				dp[i][j] = minVal
+			} else {
+				// 不匹配：计算最小编辑距离
+				minVal := dp[i-1][j] + 3 // 删除成本3（乘以2后）
+				if dp[i][j-1]+3 < minVal {
+					minVal = dp[i][j-1] + 3 // 添加成本3（乘以2后）
+				}
+				if dp[i-1][j-1]+8 < minVal {
+					minVal = dp[i-1][j-1] + 8 // 替换成本4（乘以2后为8）
+				}
+				dp[i][j] = minVal
+			}
+		}
+	}
+
+	// 调试：打印dp矩阵和match矩阵
+	debugEnabled := os.Getenv("DEBUG_DIFF") != ""
+	if debugEnabled || (m <= 10 && n <= 10) {
+		log.Printf("[DEBUG] match矩阵 (m=%d,n=%d):", m, n)
+		for i := 0; i <= m; i++ {
+			row := ""
+			for j := 0; j <= n; j++ {
+				row += fmt.Sprintf("%d ", match[i][j])
+			}
+			log.Printf("[DEBUG]   match[%d]: %s", i, row)
+		}
+		log.Printf("[DEBUG] dp矩阵 (m=%d,n=%d):", m, n)
+		for i := 0; i <= m; i++ {
+			row := ""
+			for j := 0; j <= n; j++ {
+				row += fmt.Sprintf("%d ", dp[i][j])
+			}
+			log.Printf("[DEBUG]   dp[%d]: %s", i, row)
+		}
+	}
+
+	// 回溯生成diff
+	result := []TextDiffLine{}
+	i, j := m, n
+	for i > 0 || j > 0 {
+		// 调试：打印当前状态
+		log.Printf("[DEBUG] 回溯状态: i=%d, j=%d, dp[i][j]=%d, match[i][j]=%d", i, j, dp[i][j], match[i][j])
+		// 1. 完全相同的行（最高优先级）
+		if i > 0 && j > 0 && match[i][j] == 1 {
+			result = append([]TextDiffLine{{Type: "unchanged", Value: tabToSpaces(lines1[i-1])}}, result...)
+			i--
+			j--
+			continue
+		}
+
+		// 2. 特殊行匹配（仅空白字符差异）
+		if i > 0 && j > 0 && match[i][j] == 2 {
+			posDiff := i - j
+			if posDiff < 0 {
+				posDiff = -posDiff
+			}
+			// 移除括号惩罚：普通文本diff功能，不需要考虑括号
+			bracketPenalty := 0
+			expectedCost := dp[i-1][j-1] + 3 + posDiff + bracketPenalty
+			if dp[i][j] == expectedCost {
+				log.Printf("[DEBUG] 回溯选择特殊行: i=%d, j=%d, dp[i][j]=%d, dp[i-1][j-1]=%d, posDiff=%d, bracketPenalty=%d", i, j, dp[i][j], dp[i-1][j-1], posDiff, bracketPenalty)
+				_, charDiffs := compareLinesWithSpaceDiffSimple(lines1[i-1], lines2[j-1])
+				result = append([]TextDiffLine{
+					{
+						Type:      "unchanged",
+						Value:     tabToSpaces(lines1[i-1]),
+						Special:   true,
+						CharDiffs: charDiffs,
+					},
+				}, result...)
+				i--
+				j--
+				continue
+			}
+		}
+
+		// 3. 删除操作
+		if i > 0 && (j == 0 || dp[i][j] == dp[i-1][j]+3) {
+			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
+			i--
+			continue
+		}
+
+		// 4. 添加操作
+		if j > 0 && (i == 0 || dp[i][j] == dp[i][j-1]+3) {
+			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
+			j--
+			continue
+		}
+
+		// 5. 替换操作
+		if i > 0 && j > 0 && dp[i][j] == dp[i-1][j-1]+8 {
+			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
+			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
+			i--
+			j--
+			continue
+		}
+
+		// 6. 回退策略：如果以上都不匹配，选择成本最小的操作
+		if i > 0 && (j == 0 || dp[i-1][j] <= dp[i][j-1]) {
+			// 删除
+			result = append([]TextDiffLine{{Type: "removed", Value: tabToSpaces(lines1[i-1])}}, result...)
+			i--
+		} else if j > 0 {
+			// 添加
+			result = append([]TextDiffLine{{Type: "added", Value: tabToSpaces(lines2[j-1])}}, result...)
+			j--
+		}
+	}
+
+	json.NewEncoder(w).Encode(TextDiffResponse{Lines: result})
 }
 
 func parseCSVRows(text string) [][]string {
