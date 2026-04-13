@@ -967,18 +967,8 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 		for j := 1; j <= n; j++ {
 			if match[i][j] == 1 {
 				// 完全相同的行：成本0（乘以2后）
-				// 但对于括号行，增加位置惩罚以避免错误匹配不同作用域的括号
-				cost := dp[i-1][j-1]
-				line1, line2 := lines1[i-1], lines2[j-1]
-				if isBracketOnlyLine(line1) && isBracketOnlyLine(line2) {
-					posDiff := i - j
-					if posDiff < 0 {
-						posDiff = -posDiff
-					}
-					// 对于括号行，增加惩罚以避免错误匹配不同作用域的括号
-					cost += 2
-				}
-				dp[i][j] = cost
+				// 移除括号惩罚：普通文本diff功能，不需要考虑括号
+				dp[i][j] = dp[i-1][j-1]
 			} else if match[i][j] == 2 {
 				// 特殊行（仅空白字符差异）：成本1.5（乘以2后为3）
 				// 增加位置惩罚：位置差越大，成本越高
@@ -987,26 +977,8 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 					posDiff = -posDiff
 				}
 				positionPenalty := posDiff // 每行位置差增加1成本
-				// 对于括号行，增加额外惩罚以避免错误匹配不同作用域的括号
-				// 基于缩进差异：缩进差异越大，惩罚越大
+				// 移除括号惩罚：普通文本diff功能，不需要考虑括号
 				bracketPenalty := 0
-				line1, line2 := lines1[i-1], lines2[j-1]
-				if isBracketOnlyLine(line1) && isBracketOnlyLine(line2) {
-					// 计算缩进差异
-					indent1 := countLeadingWhitespaceVisual(line1)
-					indent2 := countLeadingWhitespaceVisual(line2)
-					indentDiff := indent1 - indent2
-					if indentDiff < 0 {
-						indentDiff = -indentDiff
-					}
-					// 缩进差异每2个单位增加1点惩罚，再加1点基础惩罚
-					// 这使得不同缩进级别的括号行更难匹配为特殊行
-					bracketPenalty = indentDiff/2 + 1
-					// 最大惩罚为8
-					if bracketPenalty > 8 {
-						bracketPenalty = 8
-					}
-				}
 				specialCost := dp[i-1][j-1] + 3 + positionPenalty + bracketPenalty
 				// 与其他操作比较，取最小成本
 				minVal := dp[i-1][j] + 3 // 删除成本
@@ -1075,25 +1047,8 @@ func handleTextDiff(w http.ResponseWriter, r *http.Request) {
 			if posDiff < 0 {
 				posDiff = -posDiff
 			}
-			// 重新计算括号惩罚以与dp计算匹配
+			// 移除括号惩罚：普通文本diff功能，不需要考虑括号
 			bracketPenalty := 0
-			line1, line2 := lines1[i-1], lines2[j-1]
-			if isBracketOnlyLine(line1) && isBracketOnlyLine(line2) {
-				// 计算缩进差异
-				indent1 := countLeadingWhitespaceVisual(line1)
-				indent2 := countLeadingWhitespaceVisual(line2)
-				indentDiff := indent1 - indent2
-				if indentDiff < 0 {
-					indentDiff = -indentDiff
-				}
-				// 缩进差异每2个单位增加1点惩罚，再加1点基础惩罚
-				// 这使得不同缩进级别的括号行更难匹配为特殊行
-				bracketPenalty = indentDiff/2 + 1
-				// 最大惩罚为8
-				if bracketPenalty > 8 {
-					bracketPenalty = 8
-				}
-			}
 			expectedCost := dp[i-1][j-1] + 3 + posDiff + bracketPenalty
 			if dp[i][j] == expectedCost {
 				log.Printf("[DEBUG] 回溯选择特殊行: i=%d, j=%d, dp[i][j]=%d, dp[i-1][j-1]=%d, posDiff=%d, bracketPenalty=%d", i, j, dp[i][j], dp[i-1][j-1], posDiff, bracketPenalty)
