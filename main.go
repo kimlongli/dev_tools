@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -149,6 +150,11 @@ type TextDiffRequest struct {
 	NewContent string `json:"new_content"`
 }
 
+type EscapeRequest struct {
+	Action  string `json:"action"`
+	Content string `json:"content"`
+}
+
 type CharDiff struct {
 	Type string `json:"type"` // "same", "space_added", "space_removed"
 	Char string `json:"char"` // 字符（空白字符显示为符号）
@@ -203,6 +209,7 @@ func main() {
 	mux.HandleFunc("/api/home-dir", handleHomeDir)
 	mux.HandleFunc("/api/csv-diff", handleCsvDiff)
 	mux.HandleFunc("/api/text-diff", handleTextDiff)
+	mux.HandleFunc("/api/string-escape", handleStringEscape)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -409,6 +416,133 @@ func handleHomeDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"home": home})
+}
+
+func handleStringEscape(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req EscapeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	switch req.Action {
+	case "escape":
+		result, err := processGoEscapes(req.Content)
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]string{"error": "无效的转义序列: " + err.Error()})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"result": result})
+	case "unescape":
+		quoted := strconv.Quote(req.Content)
+		result := quoted[1 : len(quoted)-1]
+		json.NewEncoder(w).Encode(map[string]string{"result": result})
+	default:
+		json.NewEncoder(w).Encode(map[string]string{"error": "unknown action: " + req.Action})
+	}
+}
+
+func processGoEscapes(s string) (string, error) {
+	var result strings.Builder
+
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' {
+			result.WriteByte(s[i])
+			continue
+		}
+
+		i++
+		if i >= len(s) {
+			return "", fmt.Errorf("以反斜杠结尾")
+		}
+
+		switch s[i] {
+		case 'a':
+			result.WriteByte('\a')
+		case 'b':
+			result.WriteByte('\b')
+		case 'f':
+			result.WriteByte('\f')
+		case 'n':
+			result.WriteByte('\n')
+		case 'r':
+			result.WriteByte('\r')
+		case 't':
+			result.WriteByte('\t')
+		case 'v':
+			result.WriteByte('\v')
+		case '\\':
+			result.WriteByte('\\')
+		case '\'':
+			result.WriteByte('\'')
+		case '"':
+			result.WriteByte('"')
+		case 'x':
+			if i+2 >= len(s) {
+				return "", fmt.Errorf("不完整的十六进制转义 \\x")
+			}
+			b, err := parseHexByte(s[i+1], s[i+2])
+			if err != nil {
+				return "", fmt.Errorf("无效的十六进制转义")
+			}
+			result.WriteByte(b)
+			i += 2
+		case 'u':
+			if i+4 >= len(s) {
+				return "", fmt.Errorf("不完整的unicode转义 \\u")
+			}
+			val, err := strconv.ParseUint(s[i+1:i+5], 16, 16)
+			if err != nil {
+				return "", fmt.Errorf("无效的unicode转义 \\u")
+			}
+			result.WriteRune(rune(val))
+			i += 4
+		case 'U':
+			if i+8 >= len(s) {
+				return "", fmt.Errorf("不完整的unicode转义 \\U")
+			}
+			val, err := strconv.ParseUint(s[i+1:i+9], 16, 21)
+			if err != nil {
+				return "", fmt.Errorf("无效的unicode转义 \\U")
+			}
+			result.WriteRune(rune(val))
+			i += 8
+		default:
+			return "", fmt.Errorf("未知的转义序列: \\%c", s[i])
+		}
+	}
+
+	return result.String(), nil
+}
+
+func parseHexByte(a, b byte) (byte, error) {
+	var v byte
+	if a >= '0' && a <= '9' {
+		v = (a - '0') << 4
+	} else if a >= 'a' && a <= 'f' {
+		v = (a - 'a' + 10) << 4
+	} else if a >= 'A' && a <= 'F' {
+		v = (a - 'A' + 10) << 4
+	} else {
+		return 0, fmt.Errorf("invalid hex digit: %c", a)
+	}
+	if b >= '0' && b <= '9' {
+		v |= (b - '0')
+	} else if b >= 'a' && b <= 'f' {
+		v |= (b - 'a' + 10)
+	} else if b >= 'A' && b <= 'F' {
+		v |= (b - 'A' + 10)
+	} else {
+		return 0, fmt.Errorf("invalid hex digit: %c", b)
+	}
+	return v, nil
 }
 
 func handleCsvDiff(w http.ResponseWriter, r *http.Request) {

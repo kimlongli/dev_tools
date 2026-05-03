@@ -906,17 +906,50 @@
         }
 
         // 字符串转义
-        function doUnescape() {
+        async function doUnescape() {
             const input = document.getElementById('unescape-input').value;
-            let result = input;
-            result = result.replace(/\\(.)/g, '$1');
-            document.getElementById('unescape-output').textContent = result;
+            if (!input) {
+                document.getElementById('unescape-output').textContent = '';
+                return;
+            }
+            try {
+                const response = await fetch('/api/string-escape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'escape', content: input })
+                });
+                const data = await response.json();
+                if (data.error) {
+                    document.getElementById('unescape-output').textContent = '错误: ' + data.error;
+                } else {
+                    document.getElementById('unescape-output').textContent = data.result;
+                }
+            } catch (e) {
+                document.getElementById('unescape-output').textContent = '错误: ' + e.message;
+            }
         }
 
-        function doEscape() {
+        async function doEscape() {
             const input = document.getElementById('unescape-input').value;
-            let result = input.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\t/g, '\\t').replace(/\r/g, '\\r');
-            document.getElementById('unescape-output').textContent = result;
+            if (!input) {
+                document.getElementById('unescape-output').textContent = '';
+                return;
+            }
+            try {
+                const response = await fetch('/api/string-escape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'unescape', content: input })
+                });
+                const data = await response.json();
+                if (data.error) {
+                    document.getElementById('unescape-output').textContent = '错误: ' + data.error;
+                } else {
+                    document.getElementById('unescape-output').textContent = data.result;
+                }
+            } catch (e) {
+                document.getElementById('unescape-output').textContent = '错误: ' + e.message;
+            }
         }
 
         function clearUnescape() {
