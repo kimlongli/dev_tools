@@ -150,6 +150,7 @@
         <div class="tool-item" data-tool="json-key-case">JSON Key 命名</div>
         <div class="tool-item" data-tool="csv">CSV 表格</div>
         <div class="tool-item" data-tool="base64">Base64 编解码</div>
+        <div class="tool-item" data-tool="dedup">文本去重</div>
         <div id="diy-tools-section" style="display: none;">
             <div class="sidebar-title" style="padding: 15px; font-size: 14px; border-top: 1px solid #3c3c3c;">自定义工具</div>
             <div id="diy-tools-list"></div>
@@ -370,6 +371,24 @@
                         <button class="copy-btn" onclick="copyOutputToClipboard('base64-output')">📋</button>
                     </div>
                 </div>
+                <div id="dedup" class="tool-panel">
+                    <div class="tool-title">文本去重</div>
+                    <button class="snapshot-btn" onclick="saveSnapshot('dedup')">💾 保存 Snapshot</button>
+                    <label>输入文本 (每行一条):</label>
+                    <div class="input-group">
+                        <textarea id="dedup-input" placeholder="每行输入一条文本..." style="height: 400px;"></textarea>
+                        <button class="copy-btn" onclick="copyToClipboard('dedup-input')">📋</button>
+                    </div>
+                    <button onclick="dedupLines()">去重</button>
+                    <button onclick="sortLines()">排序</button>
+                    <button onclick="dedupAndSortLines()">去重+排序</button>
+                    <button onclick="clearDedup()">清空</button>
+                    <label>输出结果:</label>
+                    <div class="output-group">
+                        <div id="dedup-output" class="result"></div>
+                        <button class="copy-btn" onclick="copyOutputToClipboard('dedup-output')">📋</button>
+                    </div>
+                </div>
                 <div id="diy-panels"></div>
             </div>
             <div class="snapshot-panel">
@@ -391,7 +410,8 @@
             'url-encode': [],
             'unescape': [],
             'json-key-case': [],
-            'base64': []
+            'base64': [],
+            'dedup': []
         };
 
         // 工具切换
@@ -439,6 +459,8 @@
                 data = { input: document.getElementById('unescape-input').value, output: document.getElementById('unescape-output').innerHTML };
             } else if (tool === 'json-key-case') {
                 data = { input: document.getElementById('json-key-input').value, output: document.getElementById('json-key-output').innerHTML };
+            } else if (tool === 'dedup') {
+                data = { input: document.getElementById('dedup-input').value, output: document.getElementById('dedup-output').innerHTML };
             } else if (tool === 'base64') {
                 data = { input: document.getElementById('base64-input').value, output: document.getElementById('base64-output').innerHTML };
             } else if (tool.startsWith('diy-')) {
@@ -588,6 +610,8 @@
                 document.getElementById('unescape-input').value = s.data.input || '';
             } else if (tool === 'json-key-case') {
                 document.getElementById('json-key-input').value = s.data.input || '';
+            } else if (tool === 'dedup') {
+                document.getElementById('dedup-input').value = s.data.input || '';
             } else if (tool === 'base64') {
                 document.getElementById('base64-input').value = s.data.input || '';
             } else if (tool.startsWith('diy-')) {
@@ -2100,6 +2124,39 @@
             saveCsvHistory();
             csvData.forEach(row => row.splice(index, 1));
             renderCSVTable();
+        }
+
+        // 文本去重
+        async function callDedup(action) {
+            const input = document.getElementById('dedup-input').value;
+            if (!input.trim()) {
+                document.getElementById('dedup-output').textContent = '';
+                return;
+            }
+            try {
+                const response = await fetch('/api/text-dedup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: input, action: action })
+                });
+                const data = await response.json();
+                if (data.error) {
+                    document.getElementById('dedup-output').textContent = '错误: ' + data.error;
+                } else {
+                    document.getElementById('dedup-output').textContent = data.result;
+                }
+            } catch (e) {
+                document.getElementById('dedup-output').textContent = '错误: ' + e.message;
+            }
+        }
+
+        function dedupLines() { callDedup('dedup'); }
+        function sortLines() { callDedup('sort'); }
+        function dedupAndSortLines() { callDedup('dedup_sort'); }
+
+        function clearDedup() {
+            document.getElementById('dedup-input').value = '';
+            document.getElementById('dedup-output').textContent = '';
         }
 
         // DIY 工具

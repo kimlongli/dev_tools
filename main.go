@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -150,6 +151,15 @@ type TextDiffRequest struct {
 	NewContent string `json:"new_content"`
 }
 
+type DedupRequest struct {
+	Content string `json:"content"`
+	Action  string `json:"action"` // "dedup", "sort", "dedup_sort"
+}
+
+type DedupResponse struct {
+	Result string `json:"result"`
+}
+
 type EscapeRequest struct {
 	Action  string `json:"action"`
 	Content string `json:"content"`
@@ -210,6 +220,7 @@ func main() {
 	mux.HandleFunc("/api/csv-diff", handleCsvDiff)
 	mux.HandleFunc("/api/text-diff", handleTextDiff)
 	mux.HandleFunc("/api/string-escape", handleStringEscape)
+	mux.HandleFunc("/api/text-dedup", handleTextDedup)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -543,6 +554,52 @@ func parseHexByte(a, b byte) (byte, error) {
 		return 0, fmt.Errorf("invalid hex digit: %c", b)
 	}
 	return v, nil
+}
+
+func handleTextDedup(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req DedupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	lines := strings.Split(req.Content, "\n")
+
+	switch req.Action {
+	case "dedup":
+		seen := make(map[string]struct{}, len(lines))
+		result := make([]string, 0, len(lines))
+		for _, line := range lines {
+			if _, ok := seen[line]; !ok {
+				seen[line] = struct{}{}
+				result = append(result, line)
+			}
+		}
+		json.NewEncoder(w).Encode(DedupResponse{Result: strings.Join(result, "\n")})
+	case "sort":
+		sort.Strings(lines)
+		json.NewEncoder(w).Encode(DedupResponse{Result: strings.Join(lines, "\n")})
+	case "dedup_sort":
+		seen := make(map[string]struct{}, len(lines))
+		unique := make([]string, 0, len(lines))
+		for _, line := range lines {
+			if _, ok := seen[line]; !ok {
+				seen[line] = struct{}{}
+				unique = append(unique, line)
+			}
+		}
+		sort.Strings(unique)
+		json.NewEncoder(w).Encode(DedupResponse{Result: strings.Join(unique, "\n")})
+	default:
+		json.NewEncoder(w).Encode(map[string]string{"error": "unknown action: " + req.Action})
+	}
 }
 
 func handleCsvDiff(w http.ResponseWriter, r *http.Request) {
