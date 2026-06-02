@@ -316,8 +316,7 @@
                 </div>
                 <div id="csv" class="tool-panel">
                     <div class="tool-title">CSV 表格</div>
-                    <button onclick="openCSVFilePicker()">打开 CSV</button>
-                    <input type="file" id="csv-file-input" accept=".csv" onchange="loadCSVFile()" style="position:absolute;opacity:0;z-index:-1;">
+                    <button onclick="openCSVFile()">打开 CSV</button>
                     <button onclick="saveCSV()">保存 CSV</button>
                     <button onclick="undoCsv()">撤销</button>
                     <div id="csv-file-path" class="csv-file-path" style="margin: 10px 0; font-size: 12px; color: #9cdcfe; word-break: break-all;"></div>
@@ -1089,28 +1088,7 @@
         }
 
         async function openCSVFile() {
-            if (window.showOpenFilePicker) {
-                try {
-                    const [handle] = await window.showOpenFilePicker({
-                        types: [{
-                            description: 'CSV Files',
-                            accept: { 'text/csv': ['.csv', '.txt'] }
-                        }],
-                    });
-                    const file = await handle.getFile();
-                    csvFileHandle = { handle: handle, name: file.name, path: file.name };
-                    
-                    const content = await file.text();
-                    parseCSV(content);
-                    csvOriginalData = JSON.parse(JSON.stringify(csvData));
-                } catch (e) {
-                    if (e.name !== 'AbortError') {
-                        console.error('打开文件失败:', e);
-                    }
-                }
-            } else {
-                openCSVFilePicker();
-            }
+            openCSVFilePicker();
         }
 
         let currentPickerPath = '';
@@ -1185,7 +1163,9 @@
             if (isSelectingForSave) {
                 csvFileHandle = { path: filePath, name: filePath.split('/').pop() };
                 closeFilePicker();
-                await saveCSVToPath(filePath);
+                if (pendingSaveContent) {
+                    showCsvDiffPreview(csvOriginalData, csvData);
+                }
             } else {
                 try {
                     const response = await fetch('/api/read-file', {
@@ -1211,41 +1191,6 @@
 
         function closeFilePicker() {
             document.getElementById('file-picker-overlay').classList.remove('active');
-        }
-
-        async function saveCSVToPath(filePath) {
-            const content = csvToString();
-            if (!content) {
-                alert('没有数据可保存');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/save-file', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: content, filename: filePath })
-                });
-                if (!response.ok) {
-                    alert('保存失败');
-                    return;
-                }
-                alert('保存成功');
-            } catch (e) {
-                alert('保存失败: ' + e.message);
-            }
-        }
-
-        async function loadCSVFile() {
-            const fileInput = document.getElementById('csv-file-input');
-            const file = fileInput.files[0];
-            if (!file) return;
-            
-            csvFileHandle = { name: file.name, handle: null };
-            
-            const content = await file.text();
-            parseCSV(content);
-            csvOriginalData = JSON.parse(JSON.stringify(csvData));
         }
 
         function parseCSV(text) {
@@ -1727,24 +1672,12 @@
                 alert('没有数据可保存');
                 return;
             }
-            
-            if (!csvFileHandle) {
-                alert('请先打开一个CSV文件');
-                return;
-            }
-            
             pendingSaveContent = content;
-            
-            try {
-                if (csvFileHandle.handle && window.showSaveFilePicker) {
-                    showCsvDiffPreview(csvOriginalData, csvData);
-                } else if (csvFileHandle.path) {
-                    showCsvDiffPreview(csvOriginalData, csvData);
-                } else {
-                    openCSVFilePicker(true);
-                }
-            } catch (e) {
-                alert('保存失败: ' + e.message);
+
+            if (csvFileHandle && csvFileHandle.path) {
+                showCsvDiffPreview(csvOriginalData, csvData);
+            } else {
+                openCSVFilePicker(true);
             }
         }
 
@@ -1949,19 +1882,20 @@
         }
 
         async function confirmCsvSave() {
+            const content = pendingSaveContent;
             closeCsvDiff();
-            
+
             try {
-                if (csvFileHandle.handle && window.showSaveFilePicker) {
-                    const writable = await csvFileHandle.handle.createWritable();
-                    await writable.write(pendingSaveContent);
-                    await writable.close();
-                    csvOriginalData = JSON.parse(JSON.stringify(csvData));
-                    alert('保存成功');
-                } else if (csvFileHandle.path) {
-                    await saveCSVToPath(csvFileHandle.path);
-                    csvOriginalData = JSON.parse(JSON.stringify(csvData));
+                const response = await fetch('/api/save-file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: content, filename: csvFileHandle.path })
+                });
+                if (!response.ok) {
+                    throw new Error('保存失败');
                 }
+                csvOriginalData = JSON.parse(JSON.stringify(csvData));
+                alert('保存成功');
             } catch (e) {
                 alert('保存失败: ' + e.message);
             }
@@ -1972,7 +1906,6 @@
             csvFileHandle = null;
             csvHistory = [];
             csvOriginalData = null;
-            document.getElementById('csv-file-input').value = '';
             document.getElementById('csv-file-path').textContent = '';
             renderCSVTable();
         }
